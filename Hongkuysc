@@ -98,6 +98,8 @@ local function getDefaultData()
 		collectDelay = "0.25",
 		collectRadius = 6,
 		postPunchWindow = 4.0,
+		takeDelay = "0.5",
+		takeRadius = "8",
 		moveCycleEnabled = true,
 		cycleTimer = "60",
 		holdA = "0.3",
@@ -107,6 +109,7 @@ local function getDefaultData()
 		keybind = "None",
 		dropKeybind = "None",
 		collectKeybind = "None",
+		takeKeybind = "None",
 		customGameName = "",
 		presets = {
 			{
@@ -160,6 +163,10 @@ local function loadConfigData()
 				appData.collectRadius = tonumber(appData.collectRadius) or 6
 				appData.postPunchWindow = tonumber(appData.postPunchWindow) or 4.0
 				appData.collectKeybind = tostring(appData.collectKeybind or "None")
+
+				appData.takeDelay = tostring(appData.takeDelay or "0.5")
+				appData.takeRadius = tostring(appData.takeRadius or "8")
+				appData.takeKeybind = tostring(appData.takeKeybind or "None")
 
 				for _, p in ipairs(appData.presets) do
 					p.remote = p.remote or "RI3aUNDuH2"
@@ -508,8 +515,8 @@ makeDraggable(openLogoBtn)
 -- ==========================================
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 360, 0, 748)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -374)
+mainFrame.Size = UDim2.new(0, 360, 0, 868)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -434)
 mainFrame.BackgroundColor3 = Color3.fromRGB(28, 72, 82)
 mainFrame.BackgroundTransparency = 0.04
 mainFrame.BorderSizePixel = 0
@@ -587,13 +594,13 @@ settingTopStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 settingTopStroke.Parent = settingTopBtn
 
 local subTitleBadge = Instance.new("TextLabel")
-subTitleBadge.Size = UDim2.new(0, 155, 0, 18)
-subTitleBadge.Position = UDim2.new(0, 44, 0, 38)
+subTitleBadge.Size = UDim2.new(0, 132, 0, 18)
+subTitleBadge.Position = UDim2.new(0, 12, 0, 38)
 subTitleBadge.BackgroundColor3 = Color3.fromRGB(18, 43, 50)
 subTitleBadge.Text = "Fish Tank [Slot 1]"
 subTitleBadge.TextColor3 = Color3.fromRGB(215, 235, 240)
 subTitleBadge.Font = Enum.Font.GothamBold
-subTitleBadge.TextSize = 11
+subTitleBadge.TextSize = 10
 subTitleBadge.Parent = mainFrame
 
 local subCorner = Instance.new("UICorner")
@@ -601,14 +608,14 @@ subCorner.CornerRadius = UDim.new(1, 0)
 subCorner.Parent = subTitleBadge
 
 local statusTopRight = Instance.new("TextLabel")
-statusTopRight.Size = UDim2.new(0, 195, 0, 18)
-statusTopRight.Position = UDim2.new(1, -207, 0, 38)
+statusTopRight.Size = UDim2.new(0, 210, 0, 18)
+statusTopRight.Position = UDim2.new(1, -218, 0, 38)
 statusTopRight.BackgroundTransparency = 1
 statusTopRight.RichText = true
-statusTopRight.Text = 'Spam: <font color="#ff6b6b">OFF</font> | Drop: <font color="#ff6b6b">OFF</font> | Collect: <font color="#ff6b6b">OFF</font>'
+statusTopRight.Text = 'Spam: <font color="#ff6b6b">OFF</font> | Drop: <font color="#ff6b6b">OFF</font> | Col: <font color="#ff6b6b">OFF</font> | Take: <font color="#ff6b6b">OFF</font>'
 statusTopRight.TextColor3 = Color3.fromRGB(255, 255, 255)
 statusTopRight.Font = Enum.Font.GothamBold
-statusTopRight.TextSize = 10
+statusTopRight.TextSize = 9
 statusTopRight.TextXAlignment = Enum.TextXAlignment.Right
 statusTopRight.Parent = mainFrame
 
@@ -850,18 +857,20 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 	return box
 end
 
-local duration1Input  = createAdjustableInputRow("Delay After Script 1 (s)", "dur1", 124, 0.1, 0, true)
-local duration2Input  = createAdjustableInputRow("Script 2 Spam Duration (s)", "dur2", 157, 0.5, 0, true)
-local speedInput      = createAdjustableInputRow("Spam Speed (s)", "speed", 190, 0.01, 0.01, true)
-local bufDelayInput   = createAdjustableInputRow("Multi-Buf Delay (s)", "bufDelay", 223, 0.01, 0, true)
-local dropDelayInput  = createAdjustableInputRow("Auto Drop Delay (s)", "dropDelay", 256, 0.5, 0.1, false)
+local duration1Input    = createAdjustableInputRow("Delay After Script 1 (s)", "dur1", 124, 0.1, 0, true)
+local duration2Input    = createAdjustableInputRow("Script 2 Spam Duration (s)", "dur2", 157, 0.5, 0, true)
+local speedInput        = createAdjustableInputRow("Spam Speed (s)", "speed", 190, 0.01, 0.01, true)
+local bufDelayInput     = createAdjustableInputRow("Multi-Buf Delay (s)", "bufDelay", 223, 0.01, 0, true)
+local dropDelayInput    = createAdjustableInputRow("Auto Drop Delay (s)", "dropDelay", 256, 0.5, 0.1, false)
 local collectDelayInput = createAdjustableInputRow("Auto Collect Delay (s)", "collectDelay", 289, 0.05, 0.05, false)
+local takeDelayInput    = createAdjustableInputRow("Auto Take Ulang Delay (s)", "takeDelay", 322, 0.1, 0.05, false)
+local takeRadiusInput   = createAdjustableInputRow("Auto Take Radius (Tiles)", "takeRadius", 355, 1, 1, false)
 
 -- Tombol ON / OFF Move Cycle
 local moveCycleToggleBtn = Instance.new("TextButton")
 moveCycleToggleBtn.Name = "MoveCycleToggleBtn"
 moveCycleToggleBtn.Size = UDim2.new(1, -24, 0, 28)
-moveCycleToggleBtn.Position = UDim2.new(0, 12, 0, 323)
+moveCycleToggleBtn.Position = UDim2.new(0, 12, 0, 389)
 moveCycleToggleBtn.Font = Enum.Font.FredokaOne
 moveCycleToggleBtn.TextSize = 14
 moveCycleToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -876,11 +885,11 @@ mcStroke.Thickness = 1.4
 mcStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 mcStroke.Parent = moveCycleToggleBtn
 
-local pauseCycleInput = createAdjustableInputRow("Spam Cycle Timer (s)", "cycleTimer", 356, 1, 0, false)
-local holdAInput      = createAdjustableInputRow("1. Hold [A] Duration (s)", "holdA", 389, 0.05, 0.01, false)
-local waitAfterAInput = createAdjustableInputRow("2. Wait After [A] (s)", "waitAfterA", 422, 0.2, 0, false)
-local holdWInput      = createAdjustableInputRow("3. Hold [W] Duration (s)", "holdW", 455, 0.05, 0.01, false)
-local holdDInput      = createAdjustableInputRow("4. Hold [D] Duration (s)", "holdD", 488, 0.05, 0.01, false)
+local pauseCycleInput = createAdjustableInputRow("Spam Cycle Timer (s)", "cycleTimer", 422, 1, 0, false)
+local holdAInput      = createAdjustableInputRow("1. Hold [A] Duration (s)", "holdA", 455, 0.05, 0.01, false)
+local waitAfterAInput = createAdjustableInputRow("2. Wait After [A] (s)", "waitAfterA", 488, 0.2, 0, false)
+local holdWInput      = createAdjustableInputRow("3. Hold [W] Duration (s)", "holdW", 521, 0.05, 0.01, false)
+local holdDInput      = createAdjustableInputRow("4. Hold [D] Duration (s)", "holdD", 554, 0.05, 0.01, false)
 
 -- ==========================================
 -- 6. SETTING MENU GUI (REMOTE, BUFFER S1/S2 3 SLOTS, DROP CONFIG)
@@ -1252,7 +1261,7 @@ dpStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 dpStroke.Parent = deletePresetBtn
 
 -- ==========================================
--- 7. START SPAM, AUTO DROP, AUTO COLLECT (2x), KEYBINDS & SAVE/RESET
+-- 7. START SPAM, AUTO DROP, AUTO COLLECT (2x), AUTO TAKE ULANG, KEYBINDS & SAVE/RESET
 -- ==========================================
 local currentKeybind = nil
 if appData.keybind and appData.keybind ~= "None" and Enum.KeyCode[appData.keybind] then
@@ -1272,11 +1281,17 @@ if appData.collectKeybind and appData.collectKeybind ~= "None" and Enum.KeyCode[
 end
 local isBindingCollectKey = false
 
+local currentTakeKeybind = nil
+if appData.takeKeybind and appData.takeKeybind ~= "None" and Enum.KeyCode[appData.takeKeybind] then
+	currentTakeKeybind = Enum.KeyCode[appData.takeKeybind]
+end
+local isBindingTakeKey = false
+
 -- Option 1: Start Spam Button
 local runButton = Instance.new("TextButton")
 runButton.Name = "RunButton"
 runButton.Size = UDim2.new(1, -108, 0, 34)
-runButton.Position = UDim2.new(0, 12, 0, 522)
+runButton.Position = UDim2.new(0, 12, 0, 588)
 runButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 runButton.Text = "Start Spam: OFF"
 runButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1297,7 +1312,7 @@ buttonStroke.Parent = runButton
 local keybindBtn = Instance.new("TextButton")
 keybindBtn.Name = "KeybindButton"
 keybindBtn.Size = UDim2.new(0, 78, 0, 34)
-keybindBtn.Position = UDim2.new(1, -90, 0, 522)
+keybindBtn.Position = UDim2.new(1, -90, 0, 588)
 keybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 keybindBtn.Text = currentKeybind and ("Key: [" .. currentKeybind.Name .. "]") or "Key: [None]"
 keybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
@@ -1319,7 +1334,7 @@ keyStroke.Parent = keybindBtn
 local dropButton = Instance.new("TextButton")
 dropButton.Name = "DropButton"
 dropButton.Size = UDim2.new(1, -108, 0, 34)
-dropButton.Position = UDim2.new(0, 12, 0, 560)
+dropButton.Position = UDim2.new(0, 12, 0, 626)
 dropButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 dropButton.Text = "Auto Drop (2x): OFF"
 dropButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1340,7 +1355,7 @@ dropBtnStroke2.Parent = dropButton
 local dropKeybindBtn = Instance.new("TextButton")
 dropKeybindBtn.Name = "DropKeybindButton"
 dropKeybindBtn.Size = UDim2.new(0, 78, 0, 34)
-dropKeybindBtn.Position = UDim2.new(1, -90, 0, 560)
+dropKeybindBtn.Position = UDim2.new(1, -90, 0, 626)
 dropKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 dropKeybindBtn.Text = currentDropKeybind and ("Key: [" .. currentDropKeybind.Name .. "]") or "Key: [None]"
 dropKeybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
@@ -1362,7 +1377,7 @@ dropKeyStroke.Parent = dropKeybindBtn
 local collectButton = Instance.new("TextButton")
 collectButton.Name = "CollectButton"
 collectButton.Size = UDim2.new(1, -108, 0, 34)
-collectButton.Position = UDim2.new(0, 12, 0, 598)
+collectButton.Position = UDim2.new(0, 12, 0, 664)
 collectButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 collectButton.Text = "Auto Collect (2x): OFF"
 collectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1383,7 +1398,7 @@ collectBtnStroke.Parent = collectButton
 local collectKeybindBtn = Instance.new("TextButton")
 collectKeybindBtn.Name = "CollectKeybindButton"
 collectKeybindBtn.Size = UDim2.new(0, 78, 0, 34)
-collectKeybindBtn.Position = UDim2.new(1, -90, 0, 598)
+collectKeybindBtn.Position = UDim2.new(1, -90, 0, 664)
 collectKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 collectKeybindBtn.Text = currentCollectKeybind and ("Key: [" .. currentCollectKeybind.Name .. "]") or "Key: [None]"
 collectKeybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
@@ -1401,11 +1416,54 @@ collectKeyStroke.Thickness = 1.5
 collectKeyStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 collectKeyStroke.Parent = collectKeybindBtn
 
+-- Option 4: Auto Take Ulang Button (Continuous Re-Take Engine)
+local takeButton = Instance.new("TextButton")
+takeButton.Name = "TakeButton"
+takeButton.Size = UDim2.new(1, -108, 0, 34)
+takeButton.Position = UDim2.new(0, 12, 0, 702)
+takeButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
+takeButton.Text = "Auto Take Ulang: OFF"
+takeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+takeButton.Font = Enum.Font.FredokaOne
+takeButton.TextSize = 14
+takeButton.Parent = mainFrame
+
+local takeBtnCorner = Instance.new("UICorner")
+takeBtnCorner.CornerRadius = UDim.new(0, 6)
+takeBtnCorner.Parent = takeButton
+
+local takeBtnStroke = Instance.new("UIStroke")
+takeBtnStroke.Color = Color3.fromRGB(145, 235, 155)
+takeBtnStroke.Thickness = 1.5
+takeBtnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+takeBtnStroke.Parent = takeButton
+
+local takeKeybindBtn = Instance.new("TextButton")
+takeKeybindBtn.Name = "TakeKeybindButton"
+takeKeybindBtn.Size = UDim2.new(0, 78, 0, 34)
+takeKeybindBtn.Position = UDim2.new(1, -90, 0, 702)
+takeKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
+takeKeybindBtn.Text = currentTakeKeybind and ("Key: [" .. currentTakeKeybind.Name .. "]") or "Key: [None]"
+takeKeybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
+takeKeybindBtn.Font = Enum.Font.GothamBold
+takeKeybindBtn.TextSize = 11
+takeKeybindBtn.Parent = mainFrame
+
+local takeKeyCorner = Instance.new("UICorner")
+takeKeyCorner.CornerRadius = UDim.new(0, 6)
+takeKeyCorner.Parent = takeKeybindBtn
+
+local takeKeyStroke = Instance.new("UIStroke")
+takeKeyStroke.Color = Color3.fromRGB(85, 155, 170)
+takeKeyStroke.Thickness = 1.5
+takeKeyStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+takeKeyStroke.Parent = takeKeybindBtn
+
 -- Manual Save & Reset Config Buttons
 local saveConfigBtn = Instance.new("TextButton")
 saveConfigBtn.Name = "SaveConfigButton"
 saveConfigBtn.Size = UDim2.new(0.5, -16, 0, 26)
-saveConfigBtn.Position = UDim2.new(0, 12, 0, 638)
+saveConfigBtn.Position = UDim2.new(0, 12, 0, 742)
 saveConfigBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 130)
 saveConfigBtn.Text = "Save All Data"
 saveConfigBtn.TextColor3 = Color3.fromRGB(240, 252, 255)
@@ -1426,7 +1484,7 @@ saveStroke.Parent = saveConfigBtn
 local resetConfigBtn = Instance.new("TextButton")
 resetConfigBtn.Name = "ResetConfigButton"
 resetConfigBtn.Size = UDim2.new(0.5, -16, 0, 26)
-resetConfigBtn.Position = UDim2.new(0.5, 4, 0, 638)
+resetConfigBtn.Position = UDim2.new(0.5, 4, 0, 742)
 resetConfigBtn.BackgroundColor3 = Color3.fromRGB(85, 55, 65)
 resetConfigBtn.Text = "Reset Default"
 resetConfigBtn.TextColor3 = Color3.fromRGB(255, 230, 230)
@@ -1447,7 +1505,7 @@ resetStroke.Parent = resetConfigBtn
 -- Timer & Move Sequence Status Bar at Bottom
 local cycleStatusLabel = Instance.new("TextLabel")
 cycleStatusLabel.Size = UDim2.new(1, -24, 0, 17)
-cycleStatusLabel.Position = UDim2.new(0, 12, 0, 670)
+cycleStatusLabel.Position = UDim2.new(0, 12, 0, 774)
 cycleStatusLabel.BackgroundTransparency = 1
 cycleStatusLabel.RichText = true
 cycleStatusLabel.Text = 'Cycle Status: <font color="#a0d8ef">Idle</font>'
@@ -1459,7 +1517,7 @@ cycleStatusLabel.Parent = mainFrame
 
 local dropStatusLabel = Instance.new("TextLabel")
 dropStatusLabel.Size = UDim2.new(1, -24, 0, 17)
-dropStatusLabel.Position = UDim2.new(0, 12, 0, 688)
+dropStatusLabel.Position = UDim2.new(0, 12, 0, 792)
 dropStatusLabel.BackgroundTransparency = 1
 dropStatusLabel.RichText = true
 dropStatusLabel.Text = 'Drop Status: <font color="#a0d8ef">Idle (2x Every 5s)</font>'
@@ -1471,7 +1529,7 @@ dropStatusLabel.Parent = mainFrame
 
 local collectStatusLabel = Instance.new("TextLabel")
 collectStatusLabel.Size = UDim2.new(1, -24, 0, 17)
-collectStatusLabel.Position = UDim2.new(0, 12, 0, 706)
+collectStatusLabel.Position = UDim2.new(0, 12, 0, 810)
 collectStatusLabel.BackgroundTransparency = 1
 collectStatusLabel.RichText = true
 collectStatusLabel.Text = 'Collect Status: <font color="#a0d8ef">Idle (Kian Hub 2x Run)</font>'
@@ -1480,6 +1538,18 @@ collectStatusLabel.Font = Enum.Font.GothamBold
 collectStatusLabel.TextSize = 11
 collectStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
 collectStatusLabel.Parent = mainFrame
+
+local takeStatusLabel = Instance.new("TextLabel")
+takeStatusLabel.Size = UDim2.new(1, -24, 0, 17)
+takeStatusLabel.Position = UDim2.new(0, 12, 0, 828)
+takeStatusLabel.BackgroundTransparency = 1
+takeStatusLabel.RichText = true
+takeStatusLabel.Text = 'Take Status: <font color="#a0d8ef">Idle (Auto Take Ulang)</font>'
+takeStatusLabel.TextColor3 = Color3.fromRGB(215, 235, 240)
+takeStatusLabel.Font = Enum.Font.GothamBold
+takeStatusLabel.TextSize = 11
+takeStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+takeStatusLabel.Parent = mainFrame
 
 -- Fungsi Update Visual Tombol Move Cycle ON/OFF
 local function updateMoveCycleBtnVisual()
@@ -1522,6 +1592,8 @@ local function syncAllUI()
 	bufDelayInput.Text     = tostring(preset.bufDelay or "0")
 	dropDelayInput.Text    = tostring(appData.dropDelay or "5")
 	collectDelayInput.Text = tostring(appData.collectDelay or "0.25")
+	takeDelayInput.Text    = tostring(appData.takeDelay or "0.5")
+	takeRadiusInput.Text   = tostring(appData.takeRadius or "8")
 
 	appData.dur1 = duration1Input.Text
 	appData.dur2 = duration2Input.Text
@@ -1758,55 +1830,67 @@ resetConfigBtn.MouseButton1Click:Connect(function()
 	holdDInput.Text = appData.holdD
 	dropDelayInput.Text = appData.dropDelay
 	collectDelayInput.Text = appData.collectDelay
+	takeDelayInput.Text = appData.takeDelay
+	takeRadiusInput.Text = appData.takeRadius
 	currentKeybind = nil
 	currentDropKeybind = nil
 	currentCollectKeybind = nil
+	currentTakeKeybind = nil
 	keybindBtn.Text = "Key: [None]"
 	dropKeybindBtn.Text = "Key: [None]"
 	collectKeybindBtn.Text = "Key: [None]"
+	takeKeybindBtn.Text = "Key: [None]"
 	syncAllUI()
 	refreshDropdownUI()
 	saveConfigData()
 	sendSystemNotification("Reset Complete", "All presets & settings restored to default!", false)
 end)
 
-keybindBtn.MouseButton1Click:Connect(function()
+local function clearBindingStates()
+	isBindingKey = false
 	isBindingDropKey = false
 	isBindingCollectKey = false
+	isBindingTakeKey = false
+
+	keybindBtn.Text = currentKeybind and ("Key: [" .. currentKeybind.Name .. "]") or "Key: [None]"
+	keybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
+
 	dropKeybindBtn.Text = currentDropKeybind and ("Key: [" .. currentDropKeybind.Name .. "]") or "Key: [None]"
 	dropKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
+
 	collectKeybindBtn.Text = currentCollectKeybind and ("Key: [" .. currentCollectKeybind.Name .. "]") or "Key: [None]"
 	collectKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 
+	takeKeybindBtn.Text = currentTakeKeybind and ("Key: [" .. currentTakeKeybind.Name .. "]") or "Key: [None]"
+	takeKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
+end
+
+keybindBtn.MouseButton1Click:Connect(function()
+	clearBindingStates()
 	isBindingKey = true
 	keybindBtn.Text = "Press..."
 	keybindBtn.BackgroundColor3 = Color3.fromRGB(45, 105, 120)
 end)
 
 dropKeybindBtn.MouseButton1Click:Connect(function()
-	isBindingKey = false
-	isBindingCollectKey = false
-	keybindBtn.Text = currentKeybind and ("Key: [" .. currentKeybind.Name .. "]") or "Key: [None]"
-	keybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
-	collectKeybindBtn.Text = currentCollectKeybind and ("Key: [" .. currentCollectKeybind.Name .. "]") or "Key: [None]"
-	collectKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
-
+	clearBindingStates()
 	isBindingDropKey = true
 	dropKeybindBtn.Text = "Press..."
 	dropKeybindBtn.BackgroundColor3 = Color3.fromRGB(45, 105, 120)
 end)
 
 collectKeybindBtn.MouseButton1Click:Connect(function()
-	isBindingKey = false
-	isBindingDropKey = false
-	keybindBtn.Text = currentKeybind and ("Key: [" .. currentKeybind.Name .. "]") or "Key: [None]"
-	keybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
-	dropKeybindBtn.Text = currentDropKeybind and ("Key: [" .. currentDropKeybind.Name .. "]") or "Key: [None]"
-	dropKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
-
+	clearBindingStates()
 	isBindingCollectKey = true
 	collectKeybindBtn.Text = "Press..."
 	collectKeybindBtn.BackgroundColor3 = Color3.fromRGB(45, 105, 120)
+end)
+
+takeKeybindBtn.MouseButton1Click:Connect(function()
+	clearBindingStates()
+	isBindingTakeKey = true
+	takeKeybindBtn.Text = "Press..."
+	takeKeybindBtn.BackgroundColor3 = Color3.fromRGB(45, 105, 120)
 end)
 
 -- Inisialisasi awal UI dari data yang di-load
@@ -1821,7 +1905,7 @@ if isConfigLoaded then
 end
 
 -- ==========================================
--- 8. KIAN HUB AUTO COLLECT ENGINE (2X RUN)
+-- 8. KIAN HUB AUTO COLLECT & AUTO TAKE ULANG ENGINE
 -- ==========================================
 local KH_Refs = {
 	World = nil,
@@ -2031,7 +2115,7 @@ local function khApplyTaken(d, left)
 	end
 end
 
-local function khTakeDrop(d)
+local function khTakeDrop(d, ignoreCooldown)
 	local WorldRemotes = ReplicatedStorage:FindFirstChild("WorldRemotes")
 	local TakeDropRemote = WorldRemotes and WorldRemotes:FindFirstChild("TakeDrop")
 	local worldTake = KH_Refs.World and rawget(KH_Refs.World, "takeDrop")
@@ -2042,7 +2126,9 @@ local function khTakeDrop(d)
 	if d.armed == false and d.id ~= 112 then return 0 end
 
 	local now = os.clock()
-	if KH_DropFailUntil[d.uid] and now < KH_DropFailUntil[d.uid] then return 0 end
+	if not ignoreCooldown and KH_DropFailUntil[d.uid] and now < KH_DropFailUntil[d.uid] then
+		return 0
+	end
 
 	local amount = d.n
 	if d.id ~= 112 and KH_Refs.Inv then
@@ -2052,7 +2138,7 @@ local function khTakeDrop(d)
 		end
 	end
 	if amount <= 0 then
-		KH_DropFailUntil[d.uid] = now + 1
+		KH_DropFailUntil[d.uid] = now + 0.5
 		return 0
 	end
 
@@ -2071,7 +2157,7 @@ local function khTakeDrop(d)
 
 	if not (ok and type(taken) == "number" and taken > 0) then
 		d.failN = (d.failN or 0) + 1
-		KH_DropFailUntil[d.uid] = os.clock() + math.min(6, d.failN)
+		KH_DropFailUntil[d.uid] = os.clock() + math.min(3, d.failN * 0.5)
 		if typeof(d.frame) == "Instance" then
 			pcall(function() d.frame.Visible = not d.culled end)
 		end
@@ -2086,20 +2172,20 @@ local function khTakeDrop(d)
 	return taken
 end
 
-local function khCollectPass()
+local function khCollectPass(customRadius, ignoreCooldown)
 	local takenTotal = 0
 	local now = os.clock()
 	local cx, cy = khGetPlayerCoord()
-	local radius = tonumber(appData.collectRadius) or 6
+	local radius = tonumber(customRadius) or tonumber(appData.collectRadius) or 6
 
 	if type(KH_Drops.list) == "table" and cx and cy then
 		for i = #KH_Drops.list, 1, -1 do
 			local d = KH_Drops.list[i]
 			if type(d) == "table" and type(d.x) == "number" and type(d.y) == "number" and (d.n or 0) > 0 and not d.taking then
 				if d.armed ~= false or d.id == 112 then
-					if not (KH_DropFailUntil[d.uid] and now < KH_DropFailUntil[d.uid]) then
+					if ignoreCooldown or not (KH_DropFailUntil[d.uid] and now < KH_DropFailUntil[d.uid]) then
 						if math.abs(d.x - cx) <= radius and math.abs(d.y - cy) <= radius then
-							takenTotal += khTakeDrop(d)
+							takenTotal += khTakeDrop(d, ignoreCooldown)
 						end
 					end
 				end
@@ -2111,11 +2197,12 @@ local function khCollectPass()
 end
 
 -- ==========================================
--- 9. MAIN SPAM LOOP, AUTO-MOVE, AUTO DROP (2x) & KIAN HUB AUTO COLLECT (2x)
+-- 9. MAIN SPAM LOOP, AUTO-MOVE, AUTO DROP (2x), AUTO COLLECT (2x) & AUTO TAKE ULANG
 -- ==========================================
 local isSpamming = false
 local isDropping = false
 local isCollecting = false
+local isAutoTaking = false
 local isCurrentlyMoving = false
 
 local lastPunchTime = 0
@@ -2133,13 +2220,14 @@ end
 local function updateStatusDisplay()
 	local spamStr
 	if isCurrentlyMoving then
-		spamStr = '<font color="#ffdf55">MOVING</font>'
+		spamStr = '<font color="#ffdf55">MOVE</font>'
 	else
 		spamStr = isSpamming and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
 	end
 	local dropStr = isDropping and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
 	local collectStr = isCollecting and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
-	statusTopRight.Text = "Spam: " .. spamStr .. " | Drop: " .. dropStr .. " | Collect: " .. collectStr
+	local takeStr = isAutoTaking and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
+	statusTopRight.Text = "Spam: " .. spamStr .. " | Drop: " .. dropStr .. " | Col: " .. collectStr .. " | Take: " .. takeStr
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -2348,7 +2436,7 @@ local function toggleCollect()
 					for runIdx = 1, 2 do
 						if not isCollecting then break end
 						collectStatusLabel.Text = 'Collect Status: <font color="#ffdf55">Kian Hub 2x Run (' .. runIdx .. '/2)</font>'
-						cycleTaken += khCollectPass()
+						cycleTaken += khCollectPass(appData.collectRadius, false)
 						if runIdx == 1 and isCollecting then
 							task.wait(0.05)
 						end
@@ -2374,9 +2462,69 @@ local function toggleCollect()
 	end
 end
 
+-- ==========================================
+-- SISTEM AUTO TAKE ULANG (CONTINUOUS RE-TAKE LOOP)
+-- ==========================================
+local function toggleAutoTake()
+	isAutoTaking = not isAutoTaking
+	updateStatusDisplay()
+
+	if isAutoTaking then
+		pcall(khScanRefs, true)
+		takeButton.Text = "Auto Take Ulang: ON"
+		takeButton.BackgroundColor3 = Color3.fromRGB(215, 65, 65)
+		takeBtnStroke.Color = Color3.fromRGB(255, 130, 130)
+
+		task.spawn(function()
+			local totalRetaken = 0
+			local loopCount = 0
+
+			while isAutoTaking do
+				local tDelay = tonumber(takeDelayInput.Text) or 0.5
+				local tRadius = tonumber(takeRadiusInput.Text) or 8
+				if tDelay < 0.05 then tDelay = 0.05 end
+				if tRadius < 1 then tRadius = 1 end
+
+				loopCount += 1
+				pcall(khScanRefs, (loopCount % 6 == 0))
+
+				-- Pass 1: Pengambilan utama
+				local takenNow = khCollectPass(tRadius, false)
+
+				-- Pass 2 (Take Ulang): Paksa cek ulang sisa drop / item yang tertinggal
+				if isAutoTaking then
+					task.wait(0.06)
+					takenNow += khCollectPass(tRadius, true)
+				end
+
+				totalRetaken += takenNow
+
+				if takenNow > 0 then
+					takeStatusLabel.Text = 'Take Status: <font color="#65e874">Retake +' .. takenNow .. ' | Total: ' .. totalRetaken .. '</font>'
+				else
+					takeStatusLabel.Text = 'Take Status: <font color="#ffdf55">Scanning (R:' .. tRadius .. ') | Total: ' .. totalRetaken .. '</font>'
+				end
+
+				local startWait = os.clock()
+				while isAutoTaking and (os.clock() - startWait) < tDelay do
+					task.wait(0.05)
+				end
+			end
+
+			takeStatusLabel.Text = 'Take Status: <font color="#a0d8ef">Idle (Auto Take Ulang)</font>'
+		end)
+	else
+		takeButton.Text = "Auto Take Ulang: OFF"
+		takeButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
+		takeBtnStroke.Color = Color3.fromRGB(145, 235, 155)
+		takeStatusLabel.Text = 'Take Status: <font color="#a0d8ef">Idle (Auto Take Ulang)</font>'
+	end
+end
+
 runButton.MouseButton1Click:Connect(toggleSpam)
 dropButton.MouseButton1Click:Connect(toggleDrop)
 collectButton.MouseButton1Click:Connect(toggleCollect)
+takeButton.MouseButton1Click:Connect(toggleAutoTake)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if isBindingKey then
@@ -2433,6 +2581,24 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
+	if isBindingTakeKey then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
+				currentTakeKeybind = nil
+				appData.takeKeybind = "None"
+				takeKeybindBtn.Text = "Key: [None]"
+			else
+				currentTakeKeybind = input.KeyCode
+				appData.takeKeybind = input.KeyCode.Name
+				takeKeybindBtn.Text = "Key: [" .. input.KeyCode.Name .. "]"
+			end
+			takeKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
+			isBindingTakeKey = false
+			saveConfigData()
+		end
+		return
+	end
+
 	if not gameProcessed then
 		if currentKeybind and input.KeyCode == currentKeybind then
 			toggleSpam()
@@ -2442,6 +2608,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		end
 		if currentCollectKeybind and input.KeyCode == currentCollectKeybind then
 			toggleCollect()
+		end
+		if currentTakeKeybind and input.KeyCode == currentTakeKeybind then
+			toggleAutoTake()
 		end
 	end
 end)
