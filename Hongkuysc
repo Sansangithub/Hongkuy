@@ -18,19 +18,24 @@ if playerGui:FindFirstChild("CustomMenuGUI") then
 end
 
 -- Remove old custom commands & listeners if re-executed
-if TextChatService:FindFirstChild("HongKuyWDCommand") then
-	TextChatService.HongKuyWDCommand:Destroy()
-end
-if TextChatService:FindFirstChild("HongKuyNameCommand") then
-	TextChatService.HongKuyNameCommand:Destroy()
-end
+pcall(function()
+	if TextChatService:FindFirstChild("HongKuyWDCommand") then
+		TextChatService.HongKuyWDCommand:Destroy()
+	end
+	if TextChatService:FindFirstChild("HongKuyNameCommand") then
+		TextChatService.HongKuyNameCommand:Destroy()
+	end
+end)
+
 if _G.HongKuyPlayerAddedConn then
-	_G.HongKuyPlayerAddedConn:Disconnect()
+	pcall(function()
+		_G.HongKuyPlayerAddedConn:Disconnect()
+	end)
 	_G.HongKuyPlayerAddedConn = nil
 end
 
 -- ==========================================
--- HELPER FUNCTIONS (BUFFER & KEYBOARD)
+-- HELPER FUNCTIONS (BUFFER & MOVEMENT)
 -- ==========================================
 local function parseByteString(str)
 	if type(str) ~= "string" then return {} end
@@ -48,14 +53,17 @@ end
 
 local function createBufferFromString(str)
 	local bytes = parseByteString(str)
-	if #bytes == 0 then
+	if #bytes == 0 or not buffer or not buffer.create then
 		return nil
 	end
-	local b = buffer.create(#bytes)
-	for i = 1, #bytes do
-		buffer.writeu8(b, i - 1, bytes[i])
-	end
-	return b
+	local ok, b = pcall(function()
+		local buf = buffer.create(#bytes)
+		for i = 1, #bytes do
+			buffer.writeu8(buf, i - 1, bytes[i])
+		end
+		return buf
+	end)
+	return ok and b or nil
 end
 
 local function normalizeByteString(str)
@@ -63,16 +71,53 @@ local function normalizeByteString(str)
 	return table.concat(bytes, ", ")
 end
 
-local function pressAndHoldKey(keyCode, holdDuration)
-	pcall(function()
-		VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-	end)
-	if holdDuration and holdDuration > 0 then
-		task.wait(holdDuration)
+local function moveDirectionForDuration(directionName, holdDuration)
+	local duration = math.max(0.01, tonumber(holdDuration) or 0.3)
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+
+	if humanoid and root then
+		local moveVec = Vector3.zero
+		if directionName == "A" then
+			moveVec = -root.CFrame.RightVector
+		elseif directionName == "D" then
+			moveVec = root.CFrame.RightVector
+		elseif directionName == "W" then
+			moveVec = root.CFrame.LookVector
+		elseif directionName == "S" then
+			moveVec = -root.CFrame.LookVector
+		end
+
+		local startT = os.clock()
+		while (os.clock() - startT) < duration do
+			pcall(function()
+				humanoid:Move(moveVec, false)
+			end)
+			task.wait(0.03)
+		end
+		pcall(function()
+			humanoid:Move(Vector3.zero, false)
+		end)
+		return
 	end
-	pcall(function()
-		VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-	end)
+
+	local keyMap = {
+		A = Enum.KeyCode.A,
+		W = Enum.KeyCode.W,
+		D = Enum.KeyCode.D,
+		S = Enum.KeyCode.S,
+	}
+	local keyCode = keyMap[directionName]
+	if keyCode then
+		pcall(function()
+			VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+		end)
+		task.wait(duration)
+		pcall(function()
+			VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+		end)
+	end
 end
 
 -- ==========================================
@@ -102,7 +147,7 @@ local function getDefaultData()
 		collectDelay = "0.25",
 		collectRadius = 6,
 		postPunchWindow = 4.0,
-		moveCycleEnabled = true,
+		moveCycleEnabled = false, -- Default OFF di mobile agar tidak mengganggu touch control
 		cycleTimer = "60",
 		holdA = "0.3",
 		waitAfterA = "2",
@@ -148,13 +193,16 @@ local function loadConfigData()
 	pcall(function()
 		if isfile and readfile and isfile(CONFIG_FILE) then
 			local raw = readfile(CONFIG_FILE)
+			if type(raw) ~= "string" or raw == "" then return end
 			local decoded = HttpService:JSONDecode(raw)
 			if type(decoded) == "table" and type(decoded.presets) == "table" and #decoded.presets > 0 then
 				for k, v in pairs(decoded) do
-					appData[k] = v
+					if type(v) ~= "function" and type(v) ~= "userdata" then
+						appData[k] = v
+					end
 				end
 				if appData.moveCycleEnabled == nil then
-					appData.moveCycleEnabled = true
+					appData.moveCycleEnabled = false
 				end
 				appData.dropDelay = tostring(appData.dropDelay or "5")
 				appData.dropRemote = tostring(appData.dropRemote or "wDXRlfJPK1")
@@ -172,27 +220,32 @@ local function loadConfigData()
 				appData.collectKeybind = tostring(appData.collectKeybind or "None")
 
 				for _, p in ipairs(appData.presets) do
-					p.remote = p.remote or "RI3aUNDuH2"
-					p.dur1 = tostring(p.dur1 or "0")
-					p.dur2 = tostring(p.dur2 or "0.04")
-					p.speed = tostring(p.speed or "0.03")
-					p.bufDelay = tostring(p.bufDelay or "0")
-					if p.useScript2 == nil then
-						p.useScript2 = true
-					end
-					if type(p.slots) ~= "table" then p.slots = {} end
-					for s = 1, 3 do
-						if type(p.slots[s]) ~= "table" then
-							p.slots[s] = { s1 = defaultS1, s2 = defaultS2 }
-						else
-							p.slots[s].s1 = tostring(p.slots[s].s1 or "")
-							p.slots[s].s2 = tostring(p.slots[s].s2 or "")
+					if type(p) == "table" then
+						p.name = tostring(p.name or "Preset")
+						p.remote = tostring(p.remote or "RI3aUNDuH2")
+						p.dur1 = tostring(p.dur1 or "0")
+						p.dur2 = tostring(p.dur2 or "0.04")
+						p.speed = tostring(p.speed or "0.03")
+						p.bufDelay = tostring(p.bufDelay or "0")
+						if p.useScript2 == nil then
+							p.useScript2 = true
+						end
+						if type(p.slots) ~= "table" then p.slots = {} end
+						for s = 1, 3 do
+							if type(p.slots[s]) ~= "table" then
+								p.slots[s] = { s1 = defaultS1, s2 = defaultS2 }
+							else
+								p.slots[s].s1 = tostring(p.slots[s].s1 or "")
+								p.slots[s].s2 = tostring(p.slots[s].s2 or "")
+							end
 						end
 					end
 				end
+				appData.selectedPreset = tonumber(appData.selectedPreset) or 1
 				if not appData.presets[appData.selectedPreset] then
 					appData.selectedPreset = 1
 				end
+				appData.selectedSlot = tonumber(appData.selectedSlot) or 1
 				if appData.selectedSlot < 1 or appData.selectedSlot > 3 then
 					appData.selectedSlot = 1
 				end
@@ -217,9 +270,9 @@ local activeTakeBuf = nil
 
 local function rebuildActiveBuffers()
 	local preset = appData.presets[appData.selectedPreset] or appData.presets[1]
-	local slot = preset.slots[appData.selectedSlot] or preset.slots[1]
-	activeRemoteName = preset.remote or "RI3aUNDuH2"
-	activeUseScript2 = (preset.useScript2 ~= false)
+	local slot = (preset and preset.slots and preset.slots[appData.selectedSlot]) or (preset and preset.slots and preset.slots[1]) or { s1 = defaultS1, s2 = defaultS2 }
+	activeRemoteName = (preset and preset.remote) or "RI3aUNDuH2"
+	activeUseScript2 = (preset and preset.useScript2 ~= false)
 	activeBuf1 = createBufferFromString(slot.s1)
 	if activeUseScript2 and slot.s2 and slot.s2 ~= "" then
 		activeBuf2 = createBufferFromString(slot.s2)
@@ -243,13 +296,16 @@ local JOIN_SOUND_ID = "rbxassetid://137300436593190"
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CustomMenuGUI"
 screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 999
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
 -- Growtopia-style Big Center Notification Banner
 local gtNotifHolder = Instance.new("Frame")
 gtNotifHolder.Name = "GrowtopiaNotifHolder"
-gtNotifHolder.Size = UDim2.new(0.8, 0, 0, 110)
-gtNotifHolder.Position = UDim2.new(0.5, 0, 0.22, 0)
+gtNotifHolder.Size = UDim2.new(0.8, 0, 0, 90)
+gtNotifHolder.Position = UDim2.new(0.5, 0, 0.16, 0)
 gtNotifHolder.AnchorPoint = Vector2.new(0.5, 0.5)
 gtNotifHolder.BackgroundTransparency = 1
 gtNotifHolder.Visible = false
@@ -258,39 +314,39 @@ gtNotifHolder.Parent = screenGui
 
 local gtTitleLabel = Instance.new("TextLabel")
 gtTitleLabel.Name = "GTTitle"
-gtTitleLabel.Size = UDim2.new(1, 0, 0, 44)
+gtTitleLabel.Size = UDim2.new(1, 0, 0, 34)
 gtTitleLabel.Position = UDim2.new(0, 0, 0, 0)
 gtTitleLabel.BackgroundTransparency = 1
 gtTitleLabel.RichText = true
 gtTitleLabel.Text = ""
 gtTitleLabel.TextColor3 = Color3.fromRGB(255, 230, 60)
 gtTitleLabel.Font = Enum.Font.FredokaOne
-gtTitleLabel.TextSize = 36
+gtTitleLabel.TextSize = 24
 gtTitleLabel.ZIndex = 101
 gtTitleLabel.Parent = gtNotifHolder
 
 local gtTitleStroke = Instance.new("UIStroke")
 gtTitleStroke.Color = Color3.fromRGB(0, 0, 0)
-gtTitleStroke.Thickness = 3
+gtTitleStroke.Thickness = 2.5
 gtTitleStroke.Parent = gtTitleLabel
 
 local gtBodyLabel = Instance.new("TextLabel")
 gtBodyLabel.Name = "GTBody"
-gtBodyLabel.Size = UDim2.new(1, 0, 0, 40)
-gtBodyLabel.Position = UDim2.new(0, 0, 0, 46)
+gtBodyLabel.Size = UDim2.new(1, 0, 0, 36)
+gtBodyLabel.Position = UDim2.new(0, 0, 0, 36)
 gtBodyLabel.BackgroundTransparency = 1
 gtBodyLabel.RichText = true
 gtBodyLabel.Text = ""
 gtBodyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 gtBodyLabel.Font = Enum.Font.GothamBlack
-gtBodyLabel.TextSize = 24
+gtBodyLabel.TextSize = 16
 gtBodyLabel.TextWrapped = true
 gtBodyLabel.ZIndex = 101
 gtBodyLabel.Parent = gtNotifHolder
 
 local gtBodyStroke = Instance.new("UIStroke")
 gtBodyStroke.Color = Color3.fromRGB(0, 0, 0)
-gtBodyStroke.Thickness = 2.5
+gtBodyStroke.Thickness = 2
 gtBodyStroke.Parent = gtBodyLabel
 
 local notifToken = 0
@@ -307,23 +363,23 @@ local function sendSystemNotification(titleText, bodyText, playJoinSound)
 	gtTitleStroke.Transparency = 0
 	gtBodyStroke.Transparency = 0
 
-	gtNotifHolder.Position = UDim2.new(0.5, 0, 0.19, 0)
+	gtNotifHolder.Position = UDim2.new(0.5, 0, 0.14, 0)
 	gtNotifHolder.Visible = true
 
 	TweenService:Create(
 		gtNotifHolder,
 		TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Position = UDim2.new(0.5, 0, 0.22, 0) }
+		{ Position = UDim2.new(0.5, 0, 0.16, 0) }
 	):Play()
 
-	task.delay(3.5, function()
+	task.delay(3.0, function()
 		if notifToken ~= currentToken then return end
-		local fadeInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local fadeInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		TweenService:Create(gtTitleLabel, fadeInfo, { TextTransparency = 1 }):Play()
 		TweenService:Create(gtBodyLabel, fadeInfo, { TextTransparency = 1 }):Play()
 		TweenService:Create(gtTitleStroke, fadeInfo, { Transparency = 1 }):Play()
 		TweenService:Create(gtBodyStroke, fadeInfo, { Transparency = 1 }):Play()
-		task.wait(0.5)
+		task.wait(0.4)
 		if notifToken == currentToken then
 			gtNotifHolder.Visible = false
 		end
@@ -346,18 +402,20 @@ local function sendSystemNotification(titleText, bodyText, playJoinSound)
 	end)
 
 	if playJoinSound then
-		local sound = Instance.new("Sound")
-		sound.SoundId = JOIN_SOUND_ID
-		sound.Volume = 1.5
-		sound.Parent = SoundService
-		sound:Play()
-		sound.Ended:Connect(function()
-			sound:Destroy()
-		end)
-		task.delay(10, function()
-			if sound and sound.Parent then
+		pcall(function()
+			local sound = Instance.new("Sound")
+			sound.SoundId = JOIN_SOUND_ID
+			sound.Volume = 1.5
+			sound.Parent = SoundService
+			sound:Play()
+			sound.Ended:Connect(function()
 				sound:Destroy()
-			end
+			end)
+			task.delay(10, function()
+				if sound and sound.Parent then
+					sound:Destroy()
+				end
+			end)
 		end)
 	end
 end
@@ -386,10 +444,12 @@ local lastCmdTime = 0
 local function applyGameName(newName, showNotif)
 	local targetPlayer = Players:FindFirstChild(player.Name)
 	if targetPlayer then
-		targetPlayer:SetAttribute("GameName", newName)
-		if targetPlayer.Character then
-			targetPlayer.Character:SetAttribute("GameName", newName)
-		end
+		pcall(function()
+			targetPlayer:SetAttribute("GameName", newName)
+			if targetPlayer.Character then
+				targetPlayer.Character:SetAttribute("GameName", newName)
+			end
+		end)
 		if showNotif then
 			sendSystemNotification("HongKuy", 'GameName changed & saved: <font color="#55ffff">' .. newName .. '</font>', false)
 		end
@@ -405,7 +465,9 @@ end
 player.CharacterAdded:Connect(function(char)
 	if appData.customGameName and appData.customGameName ~= "" then
 		task.wait(0.2)
-		char:SetAttribute("GameName", appData.customGameName)
+		pcall(function()
+			char:SetAttribute("GameName", appData.customGameName)
+		end)
 	end
 end)
 
@@ -429,24 +491,28 @@ local function checkAndRunCommands(text)
 	end
 end
 
-local nameCommand = Instance.new("TextChatCommand")
-nameCommand.Name = "HongKuyNameCommand"
-nameCommand.PrimaryAlias = "/n"
-nameCommand.SecondaryAlias = "/N"
-nameCommand.Parent = TextChatService
+pcall(function()
+	local nameCommand = Instance.new("TextChatCommand")
+	nameCommand.Name = "HongKuyNameCommand"
+	nameCommand.PrimaryAlias = "/n"
+	nameCommand.SecondaryAlias = "/N"
+	nameCommand.Parent = TextChatService
 
-nameCommand.Triggered:Connect(function(textSource, unfilteredText)
-	if textSource and textSource.UserId == player.UserId then
-		checkAndRunCommands(unfilteredText)
-	end
+	nameCommand.Triggered:Connect(function(textSource, unfilteredText)
+		if textSource and textSource.UserId == player.UserId then
+			checkAndRunCommands(unfilteredText)
+		end
+	end)
 end)
 
 player.Chatted:Connect(checkAndRunCommands)
 
-TextChatService.SendingMessage:Connect(function(chatMessage)
-	if chatMessage and chatMessage.Text then
-		checkAndRunCommands(chatMessage.Text)
-	end
+pcall(function()
+	TextChatService.SendingMessage:Connect(function(chatMessage)
+		if chatMessage and chatMessage.Text then
+			checkAndRunCommands(chatMessage.Text)
+		end
+	end)
 end)
 
 UserInputService.TextBoxFocused:Connect(function(chatBox)
@@ -503,12 +569,13 @@ end
 -- ==========================================
 local openLogoBtn = Instance.new("ImageButton")
 openLogoBtn.Name = "OpenLogoButton"
-openLogoBtn.Size = UDim2.new(0, 52, 0, 52)
-openLogoBtn.Position = UDim2.new(0.82, 0, 0.22, 0)
+openLogoBtn.Size = UDim2.new(0, 48, 0, 48)
+openLogoBtn.Position = UDim2.new(0.86, 0, 0.14, 0)
 openLogoBtn.BackgroundColor3 = Color3.fromRGB(22, 48, 56)
 openLogoBtn.Image = LOGO_ID
 openLogoBtn.ScaleType = Enum.ScaleType.Crop
 openLogoBtn.Visible = true
+openLogoBtn.ZIndex = 30
 openLogoBtn.Parent = screenGui
 
 local logoCorner = Instance.new("UICorner")
@@ -524,17 +591,24 @@ logoStroke.Parent = openLogoBtn
 makeDraggable(openLogoBtn)
 
 -- ==========================================
--- 2. MAIN FRAME (BLUE QUEST THEME)
+-- 2. MAIN FRAME (MOBILE-FRIENDLY SCROLLABLE PANEL)
 -- ==========================================
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 360, 0, 818)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -409)
+mainFrame.Size = UDim2.new(0, 340, 0.82, 0)
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 mainFrame.BackgroundColor3 = Color3.fromRGB(28, 72, 82)
 mainFrame.BackgroundTransparency = 0.04
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
+mainFrame.ZIndex = 10
 mainFrame.Parent = screenGui
+
+local mainSizeConstraint = Instance.new("UISizeConstraint")
+mainSizeConstraint.MinSize = Vector2.new(280, 240)
+mainSizeConstraint.MaxSize = Vector2.new(360, 820)
+mainSizeConstraint.Parent = mainFrame
 
 local frameCorner = Instance.new("UICorner")
 frameCorner.CornerRadius = UDim.new(0, 6)
@@ -551,11 +625,12 @@ makeDraggable(mainFrame)
 -- 3. HEADER ("HongKuy"), TOMBOL [Setting] & CLOSE [X]
 -- ==========================================
 local headerIcon = Instance.new("ImageLabel")
-headerIcon.Size = UDim2.new(0, 28, 0, 28)
-headerIcon.Position = UDim2.new(0, 12, 0, 10)
+headerIcon.Size = UDim2.new(0, 26, 0, 26)
+headerIcon.Position = UDim2.new(0, 10, 0, 8)
 headerIcon.BackgroundColor3 = Color3.fromRGB(22, 48, 56)
 headerIcon.Image = LOGO_ID
 headerIcon.ScaleType = Enum.ScaleType.Crop
+headerIcon.ZIndex = 12
 headerIcon.Parent = mainFrame
 
 local headerIconCorner = Instance.new("UICorner")
@@ -569,14 +644,15 @@ headerIconStroke.Parent = headerIcon
 
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(0, 95, 0, 28)
-titleLabel.Position = UDim2.new(0, 48, 0, 8)
+titleLabel.Size = UDim2.new(0, 92, 0, 26)
+titleLabel.Position = UDim2.new(0, 42, 0, 8)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "HongKuy"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.Font = Enum.Font.FredokaOne
-titleLabel.TextSize = 22
+titleLabel.TextSize = 20
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.ZIndex = 12
 titleLabel.Parent = mainFrame
 
 local titleStroke = Instance.new("UIStroke")
@@ -584,16 +660,17 @@ titleStroke.Color = Color3.fromRGB(15, 38, 44)
 titleStroke.Thickness = 1.5
 titleStroke.Parent = titleLabel
 
--- Tombol Setting di samping Title HongKuy (Paling Atas)
+-- Tombol Setting di samping Title HongKuy
 local settingTopBtn = Instance.new("TextButton")
 settingTopBtn.Name = "SettingTopButton"
-settingTopBtn.Size = UDim2.new(0, 74, 0, 24)
-settingTopBtn.Position = UDim2.new(0, 145, 0, 10)
+settingTopBtn.Size = UDim2.new(0, 72, 0, 24)
+settingTopBtn.Position = UDim2.new(0, 138, 0, 9)
 settingTopBtn.BackgroundColor3 = Color3.fromRGB(45, 110, 128)
 settingTopBtn.Text = "Setting"
 settingTopBtn.TextColor3 = Color3.fromRGB(240, 252, 255)
 settingTopBtn.Font = Enum.Font.GothamBold
 settingTopBtn.TextSize = 12
+settingTopBtn.ZIndex = 12
 settingTopBtn.Parent = mainFrame
 
 local settingTopCorner = Instance.new("UICorner")
@@ -606,37 +683,11 @@ settingTopStroke.Thickness = 1.5
 settingTopStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 settingTopStroke.Parent = settingTopBtn
 
-local subTitleBadge = Instance.new("TextLabel")
-subTitleBadge.Size = UDim2.new(0, 145, 0, 18)
-subTitleBadge.Position = UDim2.new(0, 44, 0, 38)
-subTitleBadge.BackgroundColor3 = Color3.fromRGB(18, 43, 50)
-subTitleBadge.Text = "Fish Tank [Slot 1]"
-subTitleBadge.TextColor3 = Color3.fromRGB(215, 235, 240)
-subTitleBadge.Font = Enum.Font.GothamBold
-subTitleBadge.TextSize = 11
-subTitleBadge.Parent = mainFrame
-
-local subCorner = Instance.new("UICorner")
-subCorner.CornerRadius = UDim.new(1, 0)
-subCorner.Parent = subTitleBadge
-
-local statusTopRight = Instance.new("TextLabel")
-statusTopRight.Size = UDim2.new(0, 205, 0, 18)
-statusTopRight.Position = UDim2.new(1, -217, 0, 38)
-statusTopRight.BackgroundTransparency = 1
-statusTopRight.RichText = true
-statusTopRight.Text = 'Spam: <font color="#ff6b6b">OFF</font> | Drop: <font color="#ff6b6b">OFF</font> | Take: <font color="#ff6b6b">OFF</font> | Collect: <font color="#ff6b6b">OFF</font>'
-statusTopRight.TextColor3 = Color3.fromRGB(255, 255, 255)
-statusTopRight.Font = Enum.Font.GothamBold
-statusTopRight.TextSize = 9
-statusTopRight.TextXAlignment = Enum.TextXAlignment.Right
-statusTopRight.Parent = mainFrame
-
 local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "CloseButton"
-closeBtn.Size = UDim2.new(0, 24, 0, 24)
-closeBtn.Position = UDim2.new(1, -14, 0, -10)
-closeBtn.BackgroundColor3 = Color3.fromRGB(68, 128, 138)
+closeBtn.Size = UDim2.new(0, 26, 0, 26)
+closeBtn.Position = UDim2.new(1, -34, 0, 8)
+closeBtn.BackgroundColor3 = Color3.fromRGB(165, 60, 65)
 closeBtn.Text = "X"
 closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeBtn.Font = Enum.Font.FredokaOne
@@ -645,29 +696,78 @@ closeBtn.ZIndex = 15
 closeBtn.Parent = mainFrame
 
 local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 4)
+closeCorner.CornerRadius = UDim.new(0, 5)
 closeCorner.Parent = closeBtn
 
 local closeStroke = Instance.new("UIStroke")
-closeStroke.Color = Color3.fromRGB(150, 215, 225)
-closeStroke.Thickness = 2
+closeStroke.Color = Color3.fromRGB(235, 130, 135)
+closeStroke.Thickness = 1.5
 closeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 closeStroke.Parent = closeBtn
+
+local subTitleBadge = Instance.new("TextLabel")
+subTitleBadge.Size = UDim2.new(0, 130, 0, 18)
+subTitleBadge.Position = UDim2.new(0, 10, 0, 38)
+subTitleBadge.BackgroundColor3 = Color3.fromRGB(18, 43, 50)
+subTitleBadge.Text = "Fish Tank [Slot 1]"
+subTitleBadge.TextColor3 = Color3.fromRGB(215, 235, 240)
+subTitleBadge.Font = Enum.Font.GothamBold
+subTitleBadge.TextSize = 10
+subTitleBadge.ZIndex = 12
+subTitleBadge.Parent = mainFrame
+
+local subCorner = Instance.new("UICorner")
+subCorner.CornerRadius = UDim.new(1, 0)
+subCorner.Parent = subTitleBadge
+
+local statusTopRight = Instance.new("TextLabel")
+statusTopRight.Size = UDim2.new(1, -148, 0, 18)
+statusTopRight.Position = UDim2.new(0, 144, 0, 38)
+statusTopRight.BackgroundTransparency = 1
+statusTopRight.RichText = true
+statusTopRight.Text = 'Spam: <font color="#ff6b6b">OFF</font> | Drop: <font color="#ff6b6b">OFF</font> | Take: <font color="#ff6b6b">OFF</font>'
+statusTopRight.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusTopRight.Font = Enum.Font.GothamBold
+statusTopRight.TextSize = 9
+statusTopRight.TextXAlignment = Enum.TextXAlignment.Right
+statusTopRight.ZIndex = 12
+statusTopRight.Parent = mainFrame
+
+-- Area Scroll di dalam MainFrame agar nyaman di layar HP
+local mainScroll = Instance.new("ScrollingFrame")
+mainScroll.Name = "MainScroll"
+mainScroll.Size = UDim2.new(1, -8, 1, -62)
+mainScroll.Position = UDim2.new(0, 4, 0, 58)
+mainScroll.BackgroundTransparency = 1
+mainScroll.BorderSizePixel = 0
+mainScroll.ScrollBarThickness = 4
+mainScroll.CanvasSize = UDim2.new(0, 0, 0, 775)
+mainScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+mainScroll.ZIndex = 11
+mainScroll.Parent = mainFrame
+
+local mainContentHolder = Instance.new("Frame")
+mainContentHolder.Name = "ContentHolder"
+mainContentHolder.Size = UDim2.new(1, -8, 0, 770)
+mainContentHolder.Position = UDim2.new(0, 4, 0, 0)
+mainContentHolder.BackgroundTransparency = 1
+mainContentHolder.ZIndex = 11
+mainContentHolder.Parent = mainScroll
 
 -- ==========================================
 -- 4. PRESET DROPDOWN & 3 SLOT BUTTONS (MAIN PANEL)
 -- ==========================================
 local dropdownBtn = Instance.new("TextButton")
 dropdownBtn.Name = "DropdownButton"
-dropdownBtn.Size = UDim2.new(1, -24, 0, 28)
-dropdownBtn.Position = UDim2.new(0, 12, 0, 60)
+dropdownBtn.Size = UDim2.new(1, 0, 0, 28)
+dropdownBtn.Position = UDim2.new(0, 0, 0, 2)
 dropdownBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 dropdownBtn.Text = "Select Preset: Fish Tank  ▼"
 dropdownBtn.TextColor3 = Color3.fromRGB(240, 250, 255)
 dropdownBtn.Font = Enum.Font.GothamBold
 dropdownBtn.TextSize = 12
-dropdownBtn.ZIndex = 5
-dropdownBtn.Parent = mainFrame
+dropdownBtn.ZIndex = 14
+dropdownBtn.Parent = mainContentHolder
 
 local dropBtnCorner = Instance.new("UICorner")
 dropBtnCorner.CornerRadius = UDim.new(0, 5)
@@ -679,18 +779,46 @@ dropBtnStroke.Thickness = 1.5
 dropBtnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 dropBtnStroke.Parent = dropdownBtn
 
+-- Tombol Slot 1, Slot 2, Slot 3 di Panel Utama
+local mainSlotBtns = {}
+for s = 1, 3 do
+	local sBtn = Instance.new("TextButton")
+	sBtn.Name = "MainSlot" .. s
+	sBtn.Size = UDim2.new(1 / 3, -6, 0, 25)
+	sBtn.Position = UDim2.new((s - 1) / 3, (s - 1) * 3, 0, 34)
+	sBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
+	sBtn.Text = "Slot " .. s
+	sBtn.TextColor3 = Color3.fromRGB(185, 215, 225)
+	sBtn.Font = Enum.Font.GothamBold
+	sBtn.TextSize = 12
+	sBtn.ZIndex = 12
+	sBtn.Parent = mainContentHolder
+
+	local sCorner = Instance.new("UICorner")
+	sCorner.CornerRadius = UDim.new(0, 5)
+	sCorner.Parent = sBtn
+
+	local sStroke = Instance.new("UIStroke")
+	sStroke.Color = Color3.fromRGB(75, 140, 155)
+	sStroke.Thickness = 1.2
+	sStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	sStroke.Parent = sBtn
+
+	mainSlotBtns[s] = sBtn
+end
+
 local dropdownList = Instance.new("ScrollingFrame")
 dropdownList.Name = "DropdownList"
-dropdownList.Size = UDim2.new(1, -24, 0, 120)
-dropdownList.Position = UDim2.new(0, 12, 0, 92)
+dropdownList.Size = UDim2.new(1, 0, 0, 120)
+dropdownList.Position = UDim2.new(0, 0, 0, 32)
 dropdownList.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 dropdownList.BorderSizePixel = 0
 dropdownList.Visible = false
 dropdownList.ScrollBarThickness = 4
 dropdownList.CanvasSize = UDim2.new(0, 0, 0, 0)
 dropdownList.AutomaticCanvasSize = Enum.AutomaticSize.Y
-dropdownList.ZIndex = 20
-dropdownList.Parent = mainFrame
+dropdownList.ZIndex = 25
+dropdownList.Parent = mainContentHolder
 
 local dropListCorner = Instance.new("UICorner")
 dropListCorner.CornerRadius = UDim.new(0, 6)
@@ -712,33 +840,6 @@ listPadding.PaddingTop = UDim.new(0, 6)
 listPadding.PaddingBottom = UDim.new(0, 6)
 listPadding.Parent = dropdownList
 
--- Tombol Slot 1, Slot 2, Slot 3 di Panel Utama
-local mainSlotBtns = {}
-for s = 1, 3 do
-	local sBtn = Instance.new("TextButton")
-	sBtn.Name = "MainSlot" .. s
-	sBtn.Size = UDim2.new(0, 106, 0, 25)
-	sBtn.Position = UDim2.new(0, 12 + (s - 1) * 115, 0, 93)
-	sBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
-	sBtn.Text = "Slot " .. s
-	sBtn.TextColor3 = Color3.fromRGB(185, 215, 225)
-	sBtn.Font = Enum.Font.GothamBold
-	sBtn.TextSize = 12
-	sBtn.Parent = mainFrame
-
-	local sCorner = Instance.new("UICorner")
-	sCorner.CornerRadius = UDim.new(0, 5)
-	sCorner.Parent = sBtn
-
-	local sStroke = Instance.new("UIStroke")
-	sStroke.Color = Color3.fromRGB(75, 140, 155)
-	sStroke.Thickness = 1.2
-	sStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	sStroke.Parent = sBtn
-
-	mainSlotBtns[s] = sBtn
-end
-
 -- ==========================================
 -- 5. INPUT ROWS WITH [-] AND [+] + MOVE CYCLE ON/OFF TOGGLE
 -- ==========================================
@@ -747,12 +848,15 @@ local function formatNumber(val)
 	return tostring(rounded)
 end
 
+local adjustableBoxes = {}
+
 local function createAdjustableInputRow(labelText, configKey, posY, stepValue, minValue, isPresetField)
 	local rowFrame = Instance.new("Frame")
-	rowFrame.Size = UDim2.new(1, -24, 0, 29)
-	rowFrame.Position = UDim2.new(0, 12, 0, posY)
+	rowFrame.Size = UDim2.new(1, 0, 0, 29)
+	rowFrame.Position = UDim2.new(0, 0, 0, posY)
 	rowFrame.BackgroundColor3 = Color3.fromRGB(22, 56, 64)
-	rowFrame.Parent = mainFrame
+	rowFrame.ZIndex = 12
+	rowFrame.Parent = mainContentHolder
 
 	local rowCorner = Instance.new("UICorner")
 	rowCorner.CornerRadius = UDim.new(0, 5)
@@ -764,24 +868,26 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 	rowStroke.Parent = rowFrame
 
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -150, 1, 0)
-	label.Position = UDim2.new(0, 10, 0, 0)
+	label.Size = UDim2.new(1, -148, 1, 0)
+	label.Position = UDim2.new(0, 8, 0, 0)
 	label.BackgroundTransparency = 1
 	label.Text = labelText
 	label.TextColor3 = Color3.fromRGB(240, 248, 255)
 	label.Font = Enum.Font.GothamSemibold
 	label.TextSize = 11
 	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 12
 	label.Parent = rowFrame
 
 	local minusBtn = Instance.new("TextButton")
 	minusBtn.Size = UDim2.new(0, 24, 0, 21)
-	minusBtn.Position = UDim2.new(1, -132, 0.5, -10.5)
+	minusBtn.Position = UDim2.new(1, -130, 0.5, -10.5)
 	minusBtn.BackgroundColor3 = Color3.fromRGB(45, 92, 104)
 	minusBtn.Text = "-"
 	minusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	minusBtn.Font = Enum.Font.FredokaOne
 	minusBtn.TextSize = 14
+	minusBtn.ZIndex = 12
 	minusBtn.Parent = rowFrame
 
 	local minusCorner = Instance.new("UICorner")
@@ -795,8 +901,8 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 	minusStroke.Parent = minusBtn
 
 	local box = Instance.new("TextBox")
-	box.Size = UDim2.new(0, 64, 0, 21)
-	box.Position = UDim2.new(1, -104, 0.5, -10.5)
+	box.Size = UDim2.new(0, 62, 0, 21)
+	box.Position = UDim2.new(1, -102, 0.5, -10.5)
 	box.BackgroundColor3 = Color3.fromRGB(95, 118, 124)
 	box.BorderSizePixel = 0
 	box.Text = tostring(appData[configKey] or "0")
@@ -804,6 +910,7 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 	box.Font = Enum.Font.GothamBold
 	box.TextSize = 11
 	box.ClearTextOnFocus = false
+	box.ZIndex = 12
 	box.Parent = rowFrame
 
 	local boxCorner = Instance.new("UICorner")
@@ -818,12 +925,13 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 
 	local plusBtn = Instance.new("TextButton")
 	plusBtn.Size = UDim2.new(0, 24, 0, 21)
-	plusBtn.Position = UDim2.new(1, -36, 0.5, -10.5)
+	plusBtn.Position = UDim2.new(1, -34, 0.5, -10.5)
 	plusBtn.BackgroundColor3 = Color3.fromRGB(45, 92, 104)
 	plusBtn.Text = "+"
 	plusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	plusBtn.Font = Enum.Font.FredokaOne
 	plusBtn.TextSize = 14
+	plusBtn.ZIndex = 12
 	plusBtn.Parent = rowFrame
 
 	local plusCorner = Instance.new("UICorner")
@@ -846,6 +954,17 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 		saveConfigData()
 	end
 
+	local function commitFromBox()
+		local num = tonumber(box.Text)
+		if not num then
+			syncValue(tostring(appData[configKey] or minValue))
+		else
+			syncValue(formatNumber(math.max(minValue, num)))
+		end
+	end
+
+	table.insert(adjustableBoxes, commitFromBox)
+
 	minusBtn.MouseButton1Click:Connect(function()
 		local current = tonumber(box.Text) or 0
 		local nextVal = math.max(minValue, current - stepValue)
@@ -858,35 +977,29 @@ local function createAdjustableInputRow(labelText, configKey, posY, stepValue, m
 		syncValue(formatNumber(nextVal))
 	end)
 
-	box.FocusLost:Connect(function()
-		local num = tonumber(box.Text)
-		if not num then
-			syncValue(tostring(appData[configKey] or minValue))
-		else
-			syncValue(formatNumber(math.max(minValue, num)))
-		end
-	end)
+	box.FocusLost:Connect(commitFromBox)
 
 	return box
 end
 
-local duration1Input    = createAdjustableInputRow("Delay After Script 1 (s)", "dur1", 124, 0.1, 0, true)
-local duration2Input    = createAdjustableInputRow("Script 2 Spam Duration (s)", "dur2", 157, 0.5, 0, true)
-local speedInput        = createAdjustableInputRow("Spam Speed (s)", "speed", 190, 0.01, 0.01, true)
-local bufDelayInput     = createAdjustableInputRow("Multi-Buf Delay (s)", "bufDelay", 223, 0.01, 0, true)
-local dropDelayInput    = createAdjustableInputRow("Auto Drop Delay (s)", "dropDelay", 256, 0.5, 0.1, false)
-local takeDelayInput    = createAdjustableInputRow("Auto Take Buffer Delay (s)", "takeDelay", 289, 0.05, 0.01, false)
-local collectDelayInput = createAdjustableInputRow("Auto Collect Delay (s)", "collectDelay", 322, 0.05, 0.05, false)
+local duration1Input    = createAdjustableInputRow("Delay After Script 1 (s)", "dur1", 65, 0.1, 0, true)
+local duration2Input    = createAdjustableInputRow("Script 2 Spam Duration (s)", "dur2", 98, 0.5, 0, true)
+local speedInput        = createAdjustableInputRow("Spam Speed (s)", "speed", 131, 0.01, 0.01, true)
+local bufDelayInput     = createAdjustableInputRow("Multi-Buf Delay (s)", "bufDelay", 164, 0.01, 0, true)
+local dropDelayInput    = createAdjustableInputRow("Auto Drop Delay (s)", "dropDelay", 197, 0.5, 0.1, false)
+local takeDelayInput    = createAdjustableInputRow("Auto Take Buffer Delay (s)", "takeDelay", 230, 0.05, 0.01, false)
+local collectDelayInput = createAdjustableInputRow("Auto Collect Delay (s)", "collectDelay", 263, 0.05, 0.05, false)
 
 -- Tombol ON / OFF Move Cycle
 local moveCycleToggleBtn = Instance.new("TextButton")
 moveCycleToggleBtn.Name = "MoveCycleToggleBtn"
-moveCycleToggleBtn.Size = UDim2.new(1, -24, 0, 28)
-moveCycleToggleBtn.Position = UDim2.new(0, 12, 0, 356)
+moveCycleToggleBtn.Size = UDim2.new(1, 0, 0, 28)
+moveCycleToggleBtn.Position = UDim2.new(0, 0, 0, 297)
 moveCycleToggleBtn.Font = Enum.Font.FredokaOne
-moveCycleToggleBtn.TextSize = 14
+moveCycleToggleBtn.TextSize = 13
 moveCycleToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-moveCycleToggleBtn.Parent = mainFrame
+moveCycleToggleBtn.ZIndex = 12
+moveCycleToggleBtn.Parent = mainContentHolder
 
 local mcCorner = Instance.new("UICorner")
 mcCorner.CornerRadius = UDim.new(0, 5)
@@ -897,25 +1010,32 @@ mcStroke.Thickness = 1.4
 mcStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 mcStroke.Parent = moveCycleToggleBtn
 
-local pauseCycleInput = createAdjustableInputRow("Spam Cycle Timer (s)", "cycleTimer", 389, 1, 0, false)
-local holdAInput      = createAdjustableInputRow("1. Hold [A] Duration (s)", "holdA", 422, 0.05, 0.01, false)
-local waitAfterAInput = createAdjustableInputRow("2. Wait After [A] (s)", "waitAfterA", 455, 0.2, 0, false)
-local holdWInput      = createAdjustableInputRow("3. Hold [W] Duration (s)", "holdW", 488, 0.05, 0.01, false)
-local holdDInput      = createAdjustableInputRow("4. Hold [D] Duration (s)", "holdD", 521, 0.05, 0.01, false)
+local pauseCycleInput = createAdjustableInputRow("Spam Cycle Timer (s)", "cycleTimer", 330, 1, 0, false)
+local holdAInput      = createAdjustableInputRow("1. Hold [A] Duration (s)", "holdA", 363, 0.05, 0.01, false)
+local waitAfterAInput = createAdjustableInputRow("2. Wait After [A] (s)", "waitAfterA", 396, 0.2, 0, false)
+local holdWInput      = createAdjustableInputRow("3. Hold [W] Duration (s)", "holdW", 429, 0.05, 0.01, false)
+local holdDInput      = createAdjustableInputRow("4. Hold [D] Duration (s)", "holdD", 462, 0.05, 0.01, false)
 
 -- ==========================================
--- 6. SETTING MENU GUI (REMOTE, BUFFER S1/S2 3 SLOTS, DROP & TAKE CONFIG)
+-- 6. SETTING MENU GUI (MOBILE SCROLLABLE PANEL)
 -- ==========================================
 local settingFrame = Instance.new("Frame")
 settingFrame.Name = "SettingMenuGUI"
-settingFrame.Size = UDim2.new(0, 350, 0, 718)
-settingFrame.Position = UDim2.new(0.5, 190, 0.5, -359)
+settingFrame.Size = UDim2.new(0, 330, 0.84, 0)
+settingFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+settingFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 settingFrame.BackgroundColor3 = Color3.fromRGB(22, 58, 66)
 settingFrame.BackgroundTransparency = 0.03
 settingFrame.BorderSizePixel = 0
 settingFrame.Visible = false
 settingFrame.Active = true
+settingFrame.ZIndex = 20
 settingFrame.Parent = screenGui
+
+local setSizeConstraint = Instance.new("UISizeConstraint")
+setSizeConstraint.MinSize = Vector2.new(280, 240)
+setSizeConstraint.MaxSize = Vector2.new(350, 720)
+setSizeConstraint.Parent = settingFrame
 
 local setFrameCorner = Instance.new("UICorner")
 setFrameCorner.CornerRadius = UDim.new(0, 6)
@@ -929,34 +1049,35 @@ setFrameStroke.Parent = settingFrame
 makeDraggable(settingFrame)
 
 local setHeaderTitle = Instance.new("TextLabel")
-setHeaderTitle.Size = UDim2.new(1, -40, 0, 26)
-setHeaderTitle.Position = UDim2.new(0, 14, 0, 6)
+setHeaderTitle.Size = UDim2.new(1, -50, 0, 26)
+setHeaderTitle.Position = UDim2.new(0, 12, 0, 6)
 setHeaderTitle.BackgroundTransparency = 1
 setHeaderTitle.Text = "HongKuy - Setting & Preset"
 setHeaderTitle.TextColor3 = Color3.fromRGB(255, 235, 90)
 setHeaderTitle.Font = Enum.Font.FredokaOne
-setHeaderTitle.TextSize = 18
+setHeaderTitle.TextSize = 16
 setHeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+setHeaderTitle.ZIndex = 22
 setHeaderTitle.Parent = settingFrame
 
 local setCloseBtn = Instance.new("TextButton")
-setCloseBtn.Size = UDim2.new(0, 24, 0, 24)
-setCloseBtn.Position = UDim2.new(1, -14, 0, -10)
-setCloseBtn.BackgroundColor3 = Color3.fromRGB(68, 128, 138)
+setCloseBtn.Size = UDim2.new(0, 26, 0, 26)
+setCloseBtn.Position = UDim2.new(1, -34, 0, 6)
+setCloseBtn.BackgroundColor3 = Color3.fromRGB(165, 60, 65)
 setCloseBtn.Text = "X"
 setCloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 setCloseBtn.Font = Enum.Font.FredokaOne
 setCloseBtn.TextSize = 14
-setCloseBtn.ZIndex = 15
+setCloseBtn.ZIndex = 25
 setCloseBtn.Parent = settingFrame
 
 local setCloseCorner = Instance.new("UICorner")
-setCloseCorner.CornerRadius = UDim.new(0, 4)
+setCloseCorner.CornerRadius = UDim.new(0, 5)
 setCloseCorner.Parent = setCloseBtn
 
 local setCloseStroke = Instance.new("UIStroke")
-setCloseStroke.Color = Color3.fromRGB(150, 215, 225)
-setCloseStroke.Thickness = 2
+setCloseStroke.Color = Color3.fromRGB(235, 130, 135)
+setCloseStroke.Thickness = 1.5
 setCloseStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 setCloseStroke.Parent = setCloseBtn
 
@@ -968,25 +1089,46 @@ settingTopBtn.MouseButton1Click:Connect(function()
 	settingFrame.Visible = not settingFrame.Visible
 end)
 
+local settingScroll = Instance.new("ScrollingFrame")
+settingScroll.Name = "SettingScroll"
+settingScroll.Size = UDim2.new(1, -8, 1, -38)
+settingScroll.Position = UDim2.new(0, 4, 0, 34)
+settingScroll.BackgroundTransparency = 1
+settingScroll.BorderSizePixel = 0
+settingScroll.ScrollBarThickness = 4
+settingScroll.CanvasSize = UDim2.new(0, 0, 0, 660)
+settingScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+settingScroll.ZIndex = 21
+settingScroll.Parent = settingFrame
+
+local settingHolder = Instance.new("Frame")
+settingHolder.Name = "SettingHolder"
+settingHolder.Size = UDim2.new(1, -8, 0, 655)
+settingHolder.Position = UDim2.new(0, 4, 0, 0)
+settingHolder.BackgroundTransparency = 1
+settingHolder.ZIndex = 21
+settingHolder.Parent = settingScroll
+
 local function createSettingLabel(text, posY)
 	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -28, 0, 16)
-	lbl.Position = UDim2.new(0, 14, 0, posY)
+	lbl.Size = UDim2.new(1, 0, 0, 16)
+	lbl.Position = UDim2.new(0, 0, 0, posY)
 	lbl.BackgroundTransparency = 1
 	lbl.Text = text
 	lbl.TextColor3 = Color3.fromRGB(210, 240, 248)
 	lbl.Font = Enum.Font.GothamBold
 	lbl.TextSize = 11
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = settingFrame
+	lbl.ZIndex = 22
+	lbl.Parent = settingHolder
 	return lbl
 end
 
 -- 1. Preset Name Input
-createSettingLabel("Preset Name (Nama Preset):", 34)
+createSettingLabel("Preset Name (Nama Preset):", 2)
 local presetNameBox = Instance.new("TextBox")
-presetNameBox.Size = UDim2.new(1, -28, 0, 26)
-presetNameBox.Position = UDim2.new(0, 14, 0, 52)
+presetNameBox.Size = UDim2.new(1, 0, 0, 26)
+presetNameBox.Position = UDim2.new(0, 0, 0, 18)
 presetNameBox.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 presetNameBox.Text = ""
 presetNameBox.PlaceholderText = "Contoh: Fish Tank / Custom S1..."
@@ -994,7 +1136,8 @@ presetNameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 presetNameBox.Font = Enum.Font.GothamSemibold
 presetNameBox.TextSize = 12
 presetNameBox.ClearTextOnFocus = false
-presetNameBox.Parent = settingFrame
+presetNameBox.ZIndex = 22
+presetNameBox.Parent = settingHolder
 
 local pnCorner = Instance.new("UICorner")
 pnCorner.CornerRadius = UDim.new(0, 5)
@@ -1007,10 +1150,10 @@ pnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 pnStroke.Parent = presetNameBox
 
 -- 2. Remote Event Name Input
-createSettingLabel("Spam RemoteEvent Name (di ReplicatedStorage):", 82)
+createSettingLabel("Spam RemoteEvent Name (di ReplicatedStorage):", 48)
 local remoteNameBox = Instance.new("TextBox")
-remoteNameBox.Size = UDim2.new(1, -28, 0, 26)
-remoteNameBox.Position = UDim2.new(0, 14, 0, 100)
+remoteNameBox.Size = UDim2.new(1, 0, 0, 26)
+remoteNameBox.Position = UDim2.new(0, 0, 0, 64)
 remoteNameBox.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 remoteNameBox.Text = ""
 remoteNameBox.PlaceholderText = "Contoh: RI3aUNDuH2"
@@ -1018,7 +1161,8 @@ remoteNameBox.TextColor3 = Color3.fromRGB(125, 245, 255)
 remoteNameBox.Font = Enum.Font.GothamBold
 remoteNameBox.TextSize = 12
 remoteNameBox.ClearTextOnFocus = false
-remoteNameBox.Parent = settingFrame
+remoteNameBox.ZIndex = 22
+remoteNameBox.Parent = settingHolder
 
 local rnCorner = Instance.new("UICorner")
 rnCorner.CornerRadius = UDim.new(0, 5)
@@ -1031,18 +1175,19 @@ rnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 rnStroke.Parent = remoteNameBox
 
 -- 3. Slot Selector di dalam Setting GUI (Slot 1, Slot 2, Slot 3)
-createSettingLabel("Select Slot to Edit Buffer (3 Slots per Preset):", 130)
+createSettingLabel("Select Slot to Edit Buffer (3 Slots per Preset):", 94)
 local setSlotBtns = {}
 for s = 1, 3 do
 	local sBtn = Instance.new("TextButton")
-	sBtn.Size = UDim2.new(0, 102, 0, 24)
-	sBtn.Position = UDim2.new(0, 14 + (s - 1) * 110, 0, 148)
+	sBtn.Size = UDim2.new(1 / 3, -6, 0, 24)
+	sBtn.Position = UDim2.new((s - 1) / 3, (s - 1) * 3, 0, 112)
 	sBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 	sBtn.Text = "Edit Slot " .. s
 	sBtn.TextColor3 = Color3.fromRGB(240, 250, 255)
 	sBtn.Font = Enum.Font.GothamBold
 	sBtn.TextSize = 11
-	sBtn.Parent = settingFrame
+	sBtn.ZIndex = 22
+	sBtn.Parent = settingHolder
 
 	local sc = Instance.new("UICorner")
 	sc.CornerRadius = UDim.new(0, 5)
@@ -1058,10 +1203,10 @@ for s = 1, 3 do
 end
 
 -- 4. Script 1 Buffer Input
-local s1TitleLbl = createSettingLabel("Script 1 Buffer (Bytes atau Paste Full Script):", 176)
+local s1TitleLbl = createSettingLabel("Script 1 Buffer (Bytes atau Paste Full Script):", 142)
 local buf1Box = Instance.new("TextBox")
-buf1Box.Size = UDim2.new(1, -28, 0, 48)
-buf1Box.Position = UDim2.new(0, 14, 0, 194)
+buf1Box.Size = UDim2.new(1, 0, 0, 48)
+buf1Box.Position = UDim2.new(0, 0, 0, 160)
 buf1Box.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 buf1Box.Text = ""
 buf1Box.PlaceholderText = "Contoh: 2, 27, 0, 188, 11... (Bisa langsung paste script spy)"
@@ -1073,7 +1218,8 @@ buf1Box.TextXAlignment = Enum.TextXAlignment.Left
 buf1Box.TextYAlignment = Enum.TextYAlignment.Top
 buf1Box.ClearTextOnFocus = false
 buf1Box.MultiLine = true
-buf1Box.Parent = settingFrame
+buf1Box.ZIndex = 22
+buf1Box.Parent = settingHolder
 
 local b1Corner = Instance.new("UICorner")
 b1Corner.CornerRadius = UDim.new(0, 5)
@@ -1085,16 +1231,17 @@ b1Stroke.Thickness = 1.2
 b1Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 b1Stroke.Parent = buf1Box
 
--- 5. Tombol Toggle Mode Script 2 (ENABLED / DISABLED - S1 ONLY)
+-- 5. Tombol Toggle Mode Script 2
 local s2ModeToggleBtn = Instance.new("TextButton")
-s2ModeToggleBtn.Size = UDim2.new(1, -28, 0, 24)
-s2ModeToggleBtn.Position = UDim2.new(0, 14, 0, 248)
+s2ModeToggleBtn.Size = UDim2.new(1, 0, 0, 24)
+s2ModeToggleBtn.Position = UDim2.new(0, 0, 0, 214)
 s2ModeToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 145, 85)
 s2ModeToggleBtn.Text = "Script 2 Mode: ENABLED (Run S1 + S2)"
 s2ModeToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 s2ModeToggleBtn.Font = Enum.Font.GothamBold
 s2ModeToggleBtn.TextSize = 11
-s2ModeToggleBtn.Parent = settingFrame
+s2ModeToggleBtn.ZIndex = 22
+s2ModeToggleBtn.Parent = settingHolder
 
 local s2mCorner = Instance.new("UICorner")
 s2mCorner.CornerRadius = UDim.new(0, 5)
@@ -1109,10 +1256,10 @@ s2mStroke.Parent = s2ModeToggleBtn
 local settingUseS2 = true
 
 -- 6. Script 2 Buffer Input
-local s2TitleLbl = createSettingLabel("Script 2 Buffer (Kosongkan / Disable jika hanya S1):", 276)
+local s2TitleLbl = createSettingLabel("Script 2 Buffer (Kosongkan / Disable jika hanya S1):", 242)
 local buf2Box = Instance.new("TextBox")
-buf2Box.Size = UDim2.new(1, -28, 0, 48)
-buf2Box.Position = UDim2.new(0, 14, 0, 294)
+buf2Box.Size = UDim2.new(1, 0, 0, 48)
+buf2Box.Position = UDim2.new(0, 0, 0, 260)
 buf2Box.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 buf2Box.Text = ""
 buf2Box.PlaceholderText = "Kosongkan atau klik tombol di atas jika hanya ingin run Script 1 saja"
@@ -1124,7 +1271,8 @@ buf2Box.TextXAlignment = Enum.TextXAlignment.Left
 buf2Box.TextYAlignment = Enum.TextYAlignment.Top
 buf2Box.ClearTextOnFocus = false
 buf2Box.MultiLine = true
-buf2Box.Parent = settingFrame
+buf2Box.ZIndex = 22
+buf2Box.Parent = settingHolder
 
 local b2Corner = Instance.new("UICorner")
 b2Corner.CornerRadius = UDim.new(0, 5)
@@ -1136,11 +1284,11 @@ b2Stroke.Thickness = 1.2
 b2Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 b2Stroke.Parent = buf2Box
 
--- 7. Auto Drop Remote & Buffer Input (di Setting GUI)
-createSettingLabel("Auto Drop Remote Name (Default: wDXRlfJPK1):", 348)
+-- 7. Auto Drop Remote & Buffer Input
+createSettingLabel("Auto Drop Remote Name (Default: wDXRlfJPK1):", 314)
 local dropRemoteBox = Instance.new("TextBox")
-dropRemoteBox.Size = UDim2.new(1, -28, 0, 24)
-dropRemoteBox.Position = UDim2.new(0, 14, 0, 366)
+dropRemoteBox.Size = UDim2.new(1, 0, 0, 24)
+dropRemoteBox.Position = UDim2.new(0, 0, 0, 332)
 dropRemoteBox.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 dropRemoteBox.Text = appData.dropRemote or "wDXRlfJPK1"
 dropRemoteBox.PlaceholderText = "wDXRlfJPK1"
@@ -1148,7 +1296,8 @@ dropRemoteBox.TextColor3 = Color3.fromRGB(255, 215, 120)
 dropRemoteBox.Font = Enum.Font.GothamBold
 dropRemoteBox.TextSize = 11
 dropRemoteBox.ClearTextOnFocus = false
-dropRemoteBox.Parent = settingFrame
+dropRemoteBox.ZIndex = 22
+dropRemoteBox.Parent = settingHolder
 
 local drCorner = Instance.new("UICorner")
 drCorner.CornerRadius = UDim.new(0, 5)
@@ -1160,10 +1309,10 @@ drStroke.Thickness = 1.2
 drStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 drStroke.Parent = dropRemoteBox
 
-createSettingLabel("Auto Drop Buffer (2x Fire per Cycle):", 394)
+createSettingLabel("Auto Drop Buffer (2x Fire per Cycle):", 360)
 local dropBufBox = Instance.new("TextBox")
-dropBufBox.Size = UDim2.new(1, -28, 0, 42)
-dropBufBox.Position = UDim2.new(0, 14, 0, 412)
+dropBufBox.Size = UDim2.new(1, 0, 0, 42)
+dropBufBox.Position = UDim2.new(0, 0, 0, 378)
 dropBufBox.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 dropBufBox.Text = appData.dropBufStr or defaultDropBytes
 dropBufBox.PlaceholderText = "23, 1, 76, 135, 155..."
@@ -1175,7 +1324,8 @@ dropBufBox.TextXAlignment = Enum.TextXAlignment.Left
 dropBufBox.TextYAlignment = Enum.TextYAlignment.Top
 dropBufBox.ClearTextOnFocus = false
 dropBufBox.MultiLine = true
-dropBufBox.Parent = settingFrame
+dropBufBox.ZIndex = 22
+dropBufBox.Parent = settingHolder
 
 local dbCorner = Instance.new("UICorner")
 dbCorner.CornerRadius = UDim.new(0, 5)
@@ -1187,11 +1337,11 @@ dbStroke.Thickness = 1.2
 dbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 dbStroke.Parent = dropBufBox
 
--- 8. Auto Take Remote & Buffer Input (di Setting GUI)
-createSettingLabel("Auto Take Remote Name (Default: Mys3ESIcFR):", 460)
+-- 8. Auto Take Remote & Buffer Input
+createSettingLabel("Auto Take Remote Name (Default: Mys3ESIcFR):", 426)
 local takeRemoteBox = Instance.new("TextBox")
-takeRemoteBox.Size = UDim2.new(1, -28, 0, 24)
-takeRemoteBox.Position = UDim2.new(0, 14, 0, 478)
+takeRemoteBox.Size = UDim2.new(1, 0, 0, 24)
+takeRemoteBox.Position = UDim2.new(0, 0, 0, 444)
 takeRemoteBox.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 takeRemoteBox.Text = appData.takeRemote or "Mys3ESIcFR"
 takeRemoteBox.PlaceholderText = "Mys3ESIcFR"
@@ -1199,7 +1349,8 @@ takeRemoteBox.TextColor3 = Color3.fromRGB(140, 245, 200)
 takeRemoteBox.Font = Enum.Font.GothamBold
 takeRemoteBox.TextSize = 11
 takeRemoteBox.ClearTextOnFocus = false
-takeRemoteBox.Parent = settingFrame
+takeRemoteBox.ZIndex = 22
+takeRemoteBox.Parent = settingHolder
 
 local trCorner = Instance.new("UICorner")
 trCorner.CornerRadius = UDim.new(0, 5)
@@ -1211,10 +1362,10 @@ trStroke.Thickness = 1.2
 trStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 trStroke.Parent = takeRemoteBox
 
-createSettingLabel("Auto Take Buffer (2x Fire per Cycle):", 506)
+createSettingLabel("Auto Take Buffer (2x Fire per Cycle):", 472)
 local takeBufBox = Instance.new("TextBox")
-takeBufBox.Size = UDim2.new(1, -28, 0, 42)
-takeBufBox.Position = UDim2.new(0, 14, 0, 524)
+takeBufBox.Size = UDim2.new(1, 0, 0, 42)
+takeBufBox.Position = UDim2.new(0, 0, 0, 490)
 takeBufBox.BackgroundColor3 = Color3.fromRGB(16, 42, 48)
 takeBufBox.Text = appData.takeBufStr or defaultTakeBytes
 takeBufBox.PlaceholderText = "Paste bytes atau script spy untuk Auto Take..."
@@ -1226,7 +1377,8 @@ takeBufBox.TextXAlignment = Enum.TextXAlignment.Left
 takeBufBox.TextYAlignment = Enum.TextYAlignment.Top
 takeBufBox.ClearTextOnFocus = false
 takeBufBox.MultiLine = true
-takeBufBox.Parent = settingFrame
+takeBufBox.ZIndex = 22
+takeBufBox.Parent = settingHolder
 
 local tbCorner = Instance.new("UICorner")
 tbCorner.CornerRadius = UDim.new(0, 5)
@@ -1263,14 +1415,15 @@ end)
 
 -- Tombol Save / Update Current Preset, Slot, Drop & Take
 local saveCurrentPresetBtn = Instance.new("TextButton")
-saveCurrentPresetBtn.Size = UDim2.new(1, -28, 0, 32)
-saveCurrentPresetBtn.Position = UDim2.new(0, 14, 0, 576)
+saveCurrentPresetBtn.Size = UDim2.new(1, 0, 0, 32)
+saveCurrentPresetBtn.Position = UDim2.new(0, 0, 0, 542)
 saveCurrentPresetBtn.BackgroundColor3 = Color3.fromRGB(65, 175, 85)
 saveCurrentPresetBtn.Text = "Save / Update Current Preset, Slot, Drop & Take"
 saveCurrentPresetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 saveCurrentPresetBtn.Font = Enum.Font.FredokaOne
 saveCurrentPresetBtn.TextSize = 12
-saveCurrentPresetBtn.Parent = settingFrame
+saveCurrentPresetBtn.ZIndex = 22
+saveCurrentPresetBtn.Parent = settingHolder
 
 local scpCorner = Instance.new("UICorner")
 scpCorner.CornerRadius = UDim.new(0, 5)
@@ -1282,16 +1435,17 @@ scpStroke.Thickness = 1.5
 scpStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 scpStroke.Parent = saveCurrentPresetBtn
 
--- Tombol Buat Preset Baru (+ Add as New Preset) & Delete Preset
+-- Tombol Buat Preset Baru & Delete Preset
 local addNewPresetBtn = Instance.new("TextButton")
-addNewPresetBtn.Size = UDim2.new(0.58, -18, 0, 30)
-addNewPresetBtn.Position = UDim2.new(0, 14, 0, 614)
+addNewPresetBtn.Size = UDim2.new(0.58, -4, 0, 30)
+addNewPresetBtn.Position = UDim2.new(0, 0, 0, 582)
 addNewPresetBtn.BackgroundColor3 = Color3.fromRGB(42, 120, 145)
 addNewPresetBtn.Text = "+ Add as New Preset"
 addNewPresetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 addNewPresetBtn.Font = Enum.Font.GothamBold
 addNewPresetBtn.TextSize = 12
-addNewPresetBtn.Parent = settingFrame
+addNewPresetBtn.ZIndex = 22
+addNewPresetBtn.Parent = settingHolder
 
 local anpCorner = Instance.new("UICorner")
 anpCorner.CornerRadius = UDim.new(0, 5)
@@ -1304,14 +1458,15 @@ anpStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 anpStroke.Parent = addNewPresetBtn
 
 local deletePresetBtn = Instance.new("TextButton")
-deletePresetBtn.Size = UDim2.new(0.42, -16, 0, 30)
-deletePresetBtn.Position = UDim2.new(0.58, 2, 0, 614)
+deletePresetBtn.Size = UDim2.new(0.42, -4, 0, 30)
+deletePresetBtn.Position = UDim2.new(0.58, 4, 0, 582)
 deletePresetBtn.BackgroundColor3 = Color3.fromRGB(175, 60, 65)
 deletePresetBtn.Text = "Delete Preset"
 deletePresetBtn.TextColor3 = Color3.fromRGB(255, 235, 235)
 deletePresetBtn.Font = Enum.Font.GothamBold
 deletePresetBtn.TextSize = 12
-deletePresetBtn.Parent = settingFrame
+deletePresetBtn.ZIndex = 22
+deletePresetBtn.Parent = settingHolder
 
 local dpCorner = Instance.new("UICorner")
 dpCorner.CornerRadius = UDim.new(0, 5)
@@ -1353,14 +1508,15 @@ local isBindingCollectKey = false
 -- Option 1: Start Spam Button
 local runButton = Instance.new("TextButton")
 runButton.Name = "RunButton"
-runButton.Size = UDim2.new(1, -108, 0, 34)
-runButton.Position = UDim2.new(0, 12, 0, 555)
+runButton.Size = UDim2.new(1, -86, 0, 34)
+runButton.Position = UDim2.new(0, 0, 0, 496)
 runButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 runButton.Text = "Start Spam: OFF"
 runButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 runButton.Font = Enum.Font.FredokaOne
-runButton.TextSize = 14
-runButton.Parent = mainFrame
+runButton.TextSize = 13
+runButton.ZIndex = 12
+runButton.Parent = mainContentHolder
 
 local buttonCorner = Instance.new("UICorner")
 buttonCorner.CornerRadius = UDim.new(0, 6)
@@ -1374,14 +1530,15 @@ buttonStroke.Parent = runButton
 
 local keybindBtn = Instance.new("TextButton")
 keybindBtn.Name = "KeybindButton"
-keybindBtn.Size = UDim2.new(0, 78, 0, 34)
-keybindBtn.Position = UDim2.new(1, -90, 0, 555)
+keybindBtn.Size = UDim2.new(0, 80, 0, 34)
+keybindBtn.Position = UDim2.new(1, -80, 0, 496)
 keybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 keybindBtn.Text = currentKeybind and ("Key: [" .. currentKeybind.Name .. "]") or "Key: [None]"
 keybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
 keybindBtn.Font = Enum.Font.GothamBold
-keybindBtn.TextSize = 11
-keybindBtn.Parent = mainFrame
+keybindBtn.TextSize = 10
+keybindBtn.ZIndex = 12
+keybindBtn.Parent = mainContentHolder
 
 local keyCorner = Instance.new("UICorner")
 keyCorner.CornerRadius = UDim.new(0, 6)
@@ -1396,14 +1553,15 @@ keyStroke.Parent = keybindBtn
 -- Option 2: Auto Drop Button (2x Run per Cycle)
 local dropButton = Instance.new("TextButton")
 dropButton.Name = "DropButton"
-dropButton.Size = UDim2.new(1, -108, 0, 34)
-dropButton.Position = UDim2.new(0, 12, 0, 593)
+dropButton.Size = UDim2.new(1, -86, 0, 34)
+dropButton.Position = UDim2.new(0, 0, 0, 534)
 dropButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 dropButton.Text = "Auto Drop (2x): OFF"
 dropButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 dropButton.Font = Enum.Font.FredokaOne
-dropButton.TextSize = 14
-dropButton.Parent = mainFrame
+dropButton.TextSize = 13
+dropButton.ZIndex = 12
+dropButton.Parent = mainContentHolder
 
 local dropBtnCorner2 = Instance.new("UICorner")
 dropBtnCorner2.CornerRadius = UDim.new(0, 6)
@@ -1417,14 +1575,15 @@ dropBtnStroke2.Parent = dropButton
 
 local dropKeybindBtn = Instance.new("TextButton")
 dropKeybindBtn.Name = "DropKeybindButton"
-dropKeybindBtn.Size = UDim2.new(0, 78, 0, 34)
-dropKeybindBtn.Position = UDim2.new(1, -90, 0, 593)
+dropKeybindBtn.Size = UDim2.new(0, 80, 0, 34)
+dropKeybindBtn.Position = UDim2.new(1, -80, 0, 534)
 dropKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 dropKeybindBtn.Text = currentDropKeybind and ("Key: [" .. currentDropKeybind.Name .. "]") or "Key: [None]"
 dropKeybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
 dropKeybindBtn.Font = Enum.Font.GothamBold
-dropKeybindBtn.TextSize = 11
-dropKeybindBtn.Parent = mainFrame
+dropKeybindBtn.TextSize = 10
+dropKeybindBtn.ZIndex = 12
+dropKeybindBtn.Parent = mainContentHolder
 
 local dropKeyCorner = Instance.new("UICorner")
 dropKeyCorner.CornerRadius = UDim.new(0, 6)
@@ -1439,14 +1598,15 @@ dropKeyStroke.Parent = dropKeybindBtn
 -- Option 3: Auto Take Button (2x Run per Cycle)
 local takeButton = Instance.new("TextButton")
 takeButton.Name = "TakeButton"
-takeButton.Size = UDim2.new(1, -108, 0, 34)
-takeButton.Position = UDim2.new(0, 12, 0, 631)
+takeButton.Size = UDim2.new(1, -86, 0, 34)
+takeButton.Position = UDim2.new(0, 0, 0, 572)
 takeButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 takeButton.Text = "Auto Take (2x): OFF"
 takeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 takeButton.Font = Enum.Font.FredokaOne
-takeButton.TextSize = 14
-takeButton.Parent = mainFrame
+takeButton.TextSize = 13
+takeButton.ZIndex = 12
+takeButton.Parent = mainContentHolder
 
 local takeBtnCorner = Instance.new("UICorner")
 takeBtnCorner.CornerRadius = UDim.new(0, 6)
@@ -1460,14 +1620,15 @@ takeBtnStroke.Parent = takeButton
 
 local takeKeybindBtn = Instance.new("TextButton")
 takeKeybindBtn.Name = "TakeKeybindButton"
-takeKeybindBtn.Size = UDim2.new(0, 78, 0, 34)
-takeKeybindBtn.Position = UDim2.new(1, -90, 0, 631)
+takeKeybindBtn.Size = UDim2.new(0, 80, 0, 34)
+takeKeybindBtn.Position = UDim2.new(1, -80, 0, 572)
 takeKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 takeKeybindBtn.Text = currentTakeKeybind and ("Key: [" .. currentTakeKeybind.Name .. "]") or "Key: [None]"
 takeKeybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
 takeKeybindBtn.Font = Enum.Font.GothamBold
-takeKeybindBtn.TextSize = 11
-takeKeybindBtn.Parent = mainFrame
+takeKeybindBtn.TextSize = 10
+takeKeybindBtn.ZIndex = 12
+takeKeybindBtn.Parent = mainContentHolder
 
 local takeKeyCorner = Instance.new("UICorner")
 takeKeyCorner.CornerRadius = UDim.new(0, 6)
@@ -1482,14 +1643,15 @@ takeKeyStroke.Parent = takeKeybindBtn
 -- Option 4: Auto Collect Button (2x Run Dari Kian Hub)
 local collectButton = Instance.new("TextButton")
 collectButton.Name = "CollectButton"
-collectButton.Size = UDim2.new(1, -108, 0, 34)
-collectButton.Position = UDim2.new(0, 12, 0, 669)
+collectButton.Size = UDim2.new(1, -86, 0, 34)
+collectButton.Position = UDim2.new(0, 0, 0, 610)
 collectButton.BackgroundColor3 = Color3.fromRGB(85, 195, 95)
 collectButton.Text = "Auto Collect (2x): OFF"
 collectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 collectButton.Font = Enum.Font.FredokaOne
-collectButton.TextSize = 14
-collectButton.Parent = mainFrame
+collectButton.TextSize = 13
+collectButton.ZIndex = 12
+collectButton.Parent = mainContentHolder
 
 local collectBtnCorner = Instance.new("UICorner")
 collectBtnCorner.CornerRadius = UDim.new(0, 6)
@@ -1503,14 +1665,15 @@ collectBtnStroke.Parent = collectButton
 
 local collectKeybindBtn = Instance.new("TextButton")
 collectKeybindBtn.Name = "CollectKeybindButton"
-collectKeybindBtn.Size = UDim2.new(0, 78, 0, 34)
-collectKeybindBtn.Position = UDim2.new(1, -90, 0, 669)
+collectKeybindBtn.Size = UDim2.new(0, 80, 0, 34)
+collectKeybindBtn.Position = UDim2.new(1, -80, 0, 610)
 collectKeybindBtn.BackgroundColor3 = Color3.fromRGB(20, 52, 60)
 collectKeybindBtn.Text = currentCollectKeybind and ("Key: [" .. currentCollectKeybind.Name .. "]") or "Key: [None]"
 collectKeybindBtn.TextColor3 = Color3.fromRGB(235, 248, 255)
 collectKeybindBtn.Font = Enum.Font.GothamBold
-collectKeybindBtn.TextSize = 11
-collectKeybindBtn.Parent = mainFrame
+collectKeybindBtn.TextSize = 10
+collectKeybindBtn.ZIndex = 12
+collectKeybindBtn.Parent = mainContentHolder
 
 local collectKeyCorner = Instance.new("UICorner")
 collectKeyCorner.CornerRadius = UDim.new(0, 6)
@@ -1525,14 +1688,15 @@ collectKeyStroke.Parent = collectKeybindBtn
 -- Manual Save & Reset Config Buttons
 local saveConfigBtn = Instance.new("TextButton")
 saveConfigBtn.Name = "SaveConfigButton"
-saveConfigBtn.Size = UDim2.new(0.5, -16, 0, 26)
-saveConfigBtn.Position = UDim2.new(0, 12, 0, 709)
+saveConfigBtn.Size = UDim2.new(0.5, -4, 0, 26)
+saveConfigBtn.Position = UDim2.new(0, 0, 0, 650)
 saveConfigBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 130)
 saveConfigBtn.Text = "Save All Data"
 saveConfigBtn.TextColor3 = Color3.fromRGB(240, 252, 255)
 saveConfigBtn.Font = Enum.Font.GothamBold
 saveConfigBtn.TextSize = 12
-saveConfigBtn.Parent = mainFrame
+saveConfigBtn.ZIndex = 12
+saveConfigBtn.Parent = mainContentHolder
 
 local saveCorner = Instance.new("UICorner")
 saveCorner.CornerRadius = UDim.new(0, 5)
@@ -1546,14 +1710,15 @@ saveStroke.Parent = saveConfigBtn
 
 local resetConfigBtn = Instance.new("TextButton")
 resetConfigBtn.Name = "ResetConfigButton"
-resetConfigBtn.Size = UDim2.new(0.5, -16, 0, 26)
-resetConfigBtn.Position = UDim2.new(0.5, 4, 0, 709)
+resetConfigBtn.Size = UDim2.new(0.5, -4, 0, 26)
+resetConfigBtn.Position = UDim2.new(0.5, 4, 0, 650)
 resetConfigBtn.BackgroundColor3 = Color3.fromRGB(85, 55, 65)
 resetConfigBtn.Text = "Reset Default"
 resetConfigBtn.TextColor3 = Color3.fromRGB(255, 230, 230)
 resetConfigBtn.Font = Enum.Font.GothamBold
 resetConfigBtn.TextSize = 12
-resetConfigBtn.Parent = mainFrame
+resetConfigBtn.ZIndex = 12
+resetConfigBtn.Parent = mainContentHolder
 
 local resetCorner = Instance.new("UICorner")
 resetCorner.CornerRadius = UDim.new(0, 5)
@@ -1567,8 +1732,8 @@ resetStroke.Parent = resetConfigBtn
 
 -- Timer & Move Sequence Status Bars at Bottom
 local cycleStatusLabel = Instance.new("TextLabel")
-cycleStatusLabel.Size = UDim2.new(1, -24, 0, 16)
-cycleStatusLabel.Position = UDim2.new(0, 12, 0, 741)
+cycleStatusLabel.Size = UDim2.new(1, 0, 0, 16)
+cycleStatusLabel.Position = UDim2.new(0, 0, 0, 682)
 cycleStatusLabel.BackgroundTransparency = 1
 cycleStatusLabel.RichText = true
 cycleStatusLabel.Text = 'Cycle Status: <font color="#a0d8ef">Idle</font>'
@@ -1576,11 +1741,12 @@ cycleStatusLabel.TextColor3 = Color3.fromRGB(215, 235, 240)
 cycleStatusLabel.Font = Enum.Font.GothamBold
 cycleStatusLabel.TextSize = 10
 cycleStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-cycleStatusLabel.Parent = mainFrame
+cycleStatusLabel.ZIndex = 12
+cycleStatusLabel.Parent = mainContentHolder
 
 local dropStatusLabel = Instance.new("TextLabel")
-dropStatusLabel.Size = UDim2.new(1, -24, 0, 16)
-dropStatusLabel.Position = UDim2.new(0, 12, 0, 758)
+dropStatusLabel.Size = UDim2.new(1, 0, 0, 16)
+dropStatusLabel.Position = UDim2.new(0, 0, 0, 700)
 dropStatusLabel.BackgroundTransparency = 1
 dropStatusLabel.RichText = true
 dropStatusLabel.Text = 'Drop Status: <font color="#a0d8ef">Idle (2x Every 5s)</font>'
@@ -1588,11 +1754,12 @@ dropStatusLabel.TextColor3 = Color3.fromRGB(215, 235, 240)
 dropStatusLabel.Font = Enum.Font.GothamBold
 dropStatusLabel.TextSize = 10
 dropStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-dropStatusLabel.Parent = mainFrame
+dropStatusLabel.ZIndex = 12
+dropStatusLabel.Parent = mainContentHolder
 
 local takeStatusLabel = Instance.new("TextLabel")
-takeStatusLabel.Size = UDim2.new(1, -24, 0, 16)
-takeStatusLabel.Position = UDim2.new(0, 12, 0, 775)
+takeStatusLabel.Size = UDim2.new(1, 0, 0, 16)
+takeStatusLabel.Position = UDim2.new(0, 0, 0, 718)
 takeStatusLabel.BackgroundTransparency = 1
 takeStatusLabel.RichText = true
 takeStatusLabel.Text = 'Take Status: <font color="#a0d8ef">Idle (2x Buffer Mode)</font>'
@@ -1600,11 +1767,12 @@ takeStatusLabel.TextColor3 = Color3.fromRGB(215, 235, 240)
 takeStatusLabel.Font = Enum.Font.GothamBold
 takeStatusLabel.TextSize = 10
 takeStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-takeStatusLabel.Parent = mainFrame
+takeStatusLabel.ZIndex = 12
+takeStatusLabel.Parent = mainContentHolder
 
 local collectStatusLabel = Instance.new("TextLabel")
-collectStatusLabel.Size = UDim2.new(1, -24, 0, 16)
-collectStatusLabel.Position = UDim2.new(0, 12, 0, 792)
+collectStatusLabel.Size = UDim2.new(1, 0, 0, 16)
+collectStatusLabel.Position = UDim2.new(0, 0, 0, 736)
 collectStatusLabel.BackgroundTransparency = 1
 collectStatusLabel.RichText = true
 collectStatusLabel.Text = 'Collect Status: <font color="#a0d8ef">Idle (Kian Hub 2x Run)</font>'
@@ -1612,7 +1780,8 @@ collectStatusLabel.TextColor3 = Color3.fromRGB(215, 235, 240)
 collectStatusLabel.Font = Enum.Font.GothamBold
 collectStatusLabel.TextSize = 10
 collectStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-collectStatusLabel.Parent = mainFrame
+collectStatusLabel.ZIndex = 12
+collectStatusLabel.Parent = mainContentHolder
 
 -- Fungsi Update Visual Tombol Move Cycle ON/OFF
 local function updateMoveCycleBtnVisual()
@@ -1639,20 +1808,20 @@ local refreshDropdownUI
 local function syncAllUI()
 	local preset = appData.presets[appData.selectedPreset] or appData.presets[1]
 	local slotIdx = appData.selectedSlot
-	local slotTbl = preset.slots[slotIdx] or preset.slots[1]
+	local slotTbl = (preset and preset.slots and preset.slots[slotIdx]) or (preset and preset.slots and preset.slots[1]) or { s1 = defaultS1, s2 = defaultS2 }
 
-	settingUseS2 = (preset.useScript2 ~= false)
+	settingUseS2 = (preset and preset.useScript2 ~= false)
 	updateS2ModeVisual()
 	updateMoveCycleBtnVisual()
 
 	local modeTag = (settingUseS2 and slotTbl.s2 ~= "") and "S1+S2" or "S1 Only"
-	dropdownBtn.Text = "Select Preset: " .. preset.name .. " (" .. modeTag .. ")  ▼"
-	subTitleBadge.Text = preset.name .. " [Slot " .. slotIdx .. "] (" .. modeTag .. ")"
+	dropdownBtn.Text = "Select Preset: " .. (preset and preset.name or "Fish Tank") .. " (" .. modeTag .. ")  ▼"
+	subTitleBadge.Text = (preset and preset.name or "Fish Tank") .. " [Slot " .. slotIdx .. "] (" .. modeTag .. ")"
 
-	duration1Input.Text    = tostring(preset.dur1 or "0")
-	duration2Input.Text    = tostring(preset.dur2 or "0.04")
-	speedInput.Text        = tostring(preset.speed or "0.03")
-	bufDelayInput.Text     = tostring(preset.bufDelay or "0")
+	duration1Input.Text    = tostring((preset and preset.dur1) or "0")
+	duration2Input.Text    = tostring((preset and preset.dur2) or "0.04")
+	speedInput.Text        = tostring((preset and preset.speed) or "0.03")
+	bufDelayInput.Text     = tostring((preset and preset.bufDelay) or "0")
 	dropDelayInput.Text    = tostring(appData.dropDelay or "5")
 	takeDelayInput.Text    = tostring(appData.takeDelay or "0.25")
 	collectDelayInput.Text = tostring(appData.collectDelay or "0.25")
@@ -1676,8 +1845,8 @@ local function syncAllUI()
 		end
 	end
 
-	presetNameBox.Text = preset.name
-	remoteNameBox.Text = preset.remote or "RI3aUNDuH2"
+	presetNameBox.Text = (preset and preset.name) or "Fish Tank"
+	remoteNameBox.Text = (preset and preset.remote) or "RI3aUNDuH2"
 	s1TitleLbl.Text = "Script 1 Buffer [Slot " .. slotIdx .. "] (Bytes / Paste Script):"
 	s2TitleLbl.Text = "Script 2 Buffer [Slot " .. slotIdx .. "] (Kosongkan jika S1 saja):"
 	buf1Box.Text = slotTbl.s1 or ""
@@ -1690,6 +1859,12 @@ local function syncAllUI()
 	takeBufBox.Text = appData.takeBufStr or defaultTakeBytes
 
 	rebuildActiveBuffers()
+end
+
+local function flushAllInputBoxes()
+	for _, commitFn in ipairs(adjustableBoxes) do
+		pcall(commitFn)
+	end
 end
 
 refreshDropdownUI = function()
@@ -1711,7 +1886,7 @@ refreshDropdownUI = function()
 		itemBtn.Font = Enum.Font.GothamSemibold
 		itemBtn.TextSize = 11
 		itemBtn.LayoutOrder = i
-		itemBtn.ZIndex = 21
+		itemBtn.ZIndex = 26
 		itemBtn.Parent = dropdownList
 
 		local itemCorner = Instance.new("UICorner")
@@ -1771,8 +1946,14 @@ end)
 
 -- Klik Save / Update Current Preset, Slot, Drop & Take
 saveCurrentPresetBtn.MouseButton1Click:Connect(function()
+	flushAllInputBoxes()
 	local preset = appData.presets[appData.selectedPreset]
 	if not preset then return end
+
+	tryExtractRemoteFromPaste(buf1Box.Text, remoteNameBox)
+	tryExtractRemoteFromPaste(buf2Box.Text, remoteNameBox)
+	tryExtractRemoteFromPaste(dropBufBox.Text, dropRemoteBox)
+	tryExtractRemoteFromPaste(takeBufBox.Text, takeRemoteBox)
 
 	local newName = string.gsub(presetNameBox.Text, "^%s*(.-)%s*$", "%1")
 	local newRemote = string.gsub(remoteNameBox.Text, "^%s*(.-)%s*$", "%1")
@@ -1814,6 +1995,7 @@ end)
 
 -- Klik + Add as New Preset
 addNewPresetBtn.MouseButton1Click:Connect(function()
+	flushAllInputBoxes()
 	local newName = string.gsub(presetNameBox.Text, "^%s*(.-)%s*$", "%1")
 	local newRemote = string.gsub(remoteNameBox.Text, "^%s*(.-)%s*$", "%1")
 	if newName == "" then
@@ -1893,6 +2075,7 @@ openLogoBtn.MouseButton1Click:Connect(function()
 end)
 
 saveConfigBtn.MouseButton1Click:Connect(function()
+	flushAllInputBoxes()
 	saveConfigData()
 	sendSystemNotification("Data Saved", 'All presets, slots, drop, take & settings saved to <font color="#65e874">' .. CONFIG_FILE .. '</font>!', false)
 end)
@@ -2107,7 +2290,7 @@ end
 local function khScanRefs(force)
 	local now = os.clock()
 	if not force and (now - KH_Refs.LastScan) < 1.0 and KH_Refs.World then
-		khFindDropRefs(false)
+		pcall(khFindDropRefs, false)
 		return true
 	end
 	KH_Refs.LastScan = now
@@ -2165,7 +2348,7 @@ end
 local function khApplyTaken(d, left)
 	local list = KH_Drops.list
 	if not list or not table.find(list, d) then return end
-	if not KH_Drops.update then khFindDropUpdate() end
+	if not KH_Drops.update then pcall(khFindDropUpdate) end
 	if KH_Drops.update and pcall(KH_Drops.update, d, left) then
 		if left > 0 then
 			d.flown = nil
@@ -2299,8 +2482,7 @@ local function updateStatusDisplay()
 	end
 	local dropStr = isDropping and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
 	local takeStr = isTaking and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
-	local collectStr = isCollecting and '<font color="#65e874">ON</font>' or '<font color="#ff6b6b">OFF</font>'
-	statusTopRight.Text = "Spam: " .. spamStr .. " | Drop: " .. dropStr .. " | Take: " .. takeStr .. " | Collect: " .. collectStr
+	statusTopRight.Text = "Spam: " .. spamStr .. " | Drop: " .. dropStr .. " | Take: " .. takeStr
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -2335,8 +2517,8 @@ local function executeMoveBreakSequence()
 	isCurrentlyMoving = true
 	updateStatusDisplay()
 
-	cycleStatusLabel.Text = 'Cycle Status: <font color="#ffdf55">1. Holding [A] (' .. holdATime .. 's)...</font>'
-	pressAndHoldKey(Enum.KeyCode.A, holdATime)
+	cycleStatusLabel.Text = 'Cycle Status: <font color="#ffdf55">1. Moving Left (' .. holdATime .. 's)...</font>'
+	moveDirectionForDuration("A", holdATime)
 	if not isSpamming then isCurrentlyMoving = false; updateStatusDisplay(); return end
 
 	if waitAfterA > 0 then
@@ -2345,12 +2527,12 @@ local function executeMoveBreakSequence()
 		if not isSpamming then isCurrentlyMoving = false; updateStatusDisplay(); return end
 	end
 
-	cycleStatusLabel.Text = 'Cycle Status: <font color="#ffdf55">3. Holding [W] (' .. holdWTime .. 's)...</font>'
-	pressAndHoldKey(Enum.KeyCode.W, holdWTime)
+	cycleStatusLabel.Text = 'Cycle Status: <font color="#ffdf55">3. Moving Forward (' .. holdWTime .. 's)...</font>'
+	moveDirectionForDuration("W", holdWTime)
 	if not isSpamming then isCurrentlyMoving = false; updateStatusDisplay(); return end
 
-	cycleStatusLabel.Text = 'Cycle Status: <font color="#ffdf55">4. Holding [D] (' .. holdDTime .. 's)...</font>'
-	pressAndHoldKey(Enum.KeyCode.D, holdDTime)
+	cycleStatusLabel.Text = 'Cycle Status: <font color="#ffdf55">4. Moving Right (' .. holdDTime .. 's)...</font>'
+	moveDirectionForDuration("D", holdDTime)
 
 	isCurrentlyMoving = false
 	updateStatusDisplay()
@@ -2366,6 +2548,7 @@ local function toggleSpam(forceState)
 	updateStatusDisplay()
 
 	if isSpamming then
+		flushAllInputBoxes()
 		runButton.Text = "Start Spam: ON"
 		runButton.BackgroundColor3 = Color3.fromRGB(215, 65, 65)
 		buttonStroke.Color = Color3.fromRGB(255, 130, 130)
@@ -2405,7 +2588,9 @@ local function toggleSpam(forceState)
 				end
 
 				if activeBuf1 then
-					Event:FireServer(activeBuf1, nil)
+					pcall(function()
+						Event:FireServer(activeBuf1, nil)
+					end)
 					registerBlockPunch()
 				end
 
@@ -2420,7 +2605,9 @@ local function toggleSpam(forceState)
 
 					local startTime2 = os.clock()
 					repeat
-						Event:FireServer(activeBuf2, nil)
+						pcall(function()
+							Event:FireServer(activeBuf2, nil)
+						end)
 						registerBlockPunch()
 						task.wait(spd)
 
@@ -2453,6 +2640,7 @@ local function toggleDrop(forceState)
 	updateStatusDisplay()
 
 	if isDropping then
+		flushAllInputBoxes()
 		dropButton.Text = "Auto Drop (2x): ON"
 		dropButton.BackgroundColor3 = Color3.fromRGB(215, 65, 65)
 		dropBtnStroke2.Color = Color3.fromRGB(255, 130, 130)
@@ -2466,7 +2654,9 @@ local function toggleDrop(forceState)
 				if DropEvent and activeDropBuf then
 					for i = 1, 2 do
 						if not isDropping then break end
-						DropEvent:FireServer(activeDropBuf, nil)
+						pcall(function()
+							DropEvent:FireServer(activeDropBuf, nil)
+						end)
 						if i == 1 then
 							task.wait(0.05)
 						end
@@ -2504,6 +2694,7 @@ local function toggleTake(forceState)
 	updateStatusDisplay()
 
 	if isTaking then
+		flushAllInputBoxes()
 		takeButton.Text = "Auto Take (2x): ON"
 		takeButton.BackgroundColor3 = Color3.fromRGB(215, 65, 65)
 		takeBtnStroke.Color = Color3.fromRGB(255, 130, 130)
@@ -2557,6 +2748,7 @@ local function toggleCollect(forceState)
 	updateStatusDisplay()
 
 	if isCollecting then
+		flushAllInputBoxes()
 		pcall(khScanRefs, true)
 		collectButton.Text = "Auto Collect (2x): ON"
 		collectButton.BackgroundColor3 = Color3.fromRGB(215, 65, 65)
@@ -2574,7 +2766,10 @@ local function toggleCollect(forceState)
 					for runIdx = 1, 2 do
 						if not isCollecting then break end
 						collectStatusLabel.Text = 'Collect Status: <font color="#ffdf55">Kian Hub 2x Run (' .. runIdx .. '/2)</font>'
-						cycleTaken += khCollectPass()
+						local okPass, passVal = pcall(khCollectPass)
+						if okPass and type(passVal) == "number" then
+							cycleTaken += passVal
+						end
 						if runIdx == 1 and isCollecting then
 							task.wait(0.05)
 						end
